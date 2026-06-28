@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Slideshow</title>
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <div id="stage"></div>
+
+    <aside id="panel" class="open">
+      <header>
+        <h1>Slideshow</h1>
+        <button id="panel-toggle" title="Hide panel (P)">×</button>
+      </header>
+
+      <section class="row">
+        <button id="pick-folder" class="primary">Choose folder…</button>
+        <input id="pick-fallback" type="file" webkitdirectory multiple accept="image/*" hidden />
+        <span id="folder-name" class="muted">No folder chosen</span>
+      </section>
+
+      <section class="row">
+        <label>Transition
+          <select id="transition">
+            <option value="fadeZoom" selected>Fade with Zoom</option>
+            <option value="kenBurns">Ken Burns</option>
+            <option value="vintage">Vintage Prints</option>
+          </select>
+        </label>
+        <label>Dwell (s)
+          <input id="dwell" type="number" min="2" max="60" step="0.5" value="10" />
+        </label>
+        <label>Transition (s)
+          <input id="tdur" type="number" min="0.5" max="10" step="0.1" value="1.5" />
+        </label>
+      </section>
+
+      <section class="row">
+        <button id="play">▶︎ Play</button>
+        <button id="prev">‹ Prev</button>
+        <button id="next">Next ›</button>
+        <button id="shuffle">Shuffle</button>
+        <button id="fullscreen">⛶ Fullscreen</button>
+      </section>
+
+      <section id="list-wrap">
+        <div class="muted small"><span id="list-count">No images</span> · Click to jump · Shuffle to reorder</div>
+        <div id="list" class="vlist"><div id="list-spacer" class="vlist-spacer"></div></div>
+      </section>
+
+      <footer class="muted small">
+        Keys: <kbd>Space</kbd> play/pause · <kbd>←</kbd>/<kbd>→</kbd> nav · <kbd>F</kbd> fullscreen · <kbd>P</kbd> panel
+      </footer>
+    </aside>
+
+    <button id="panel-show" title="Show panel (P)" hidden>≡</button>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

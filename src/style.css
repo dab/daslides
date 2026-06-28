@@ -1,0 +1,126 @@
+:root {
+  color-scheme: dark;
+  --bg: #0b0b0c;
+  --panel: rgba(20, 20, 22, 0.82);
+  --panel-border: rgba(255, 255, 255, 0.08);
+  --fg: #e9e9ea;
+  --muted: #8e8e93;
+  --accent: #4f8cff;
+  --accent-hover: #6aa0ff;
+  --row-hover: rgba(255, 255, 255, 0.05);
+  --row-active: rgba(79, 140, 255, 0.18);
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg); overflow: hidden; }
+
+#stage { position: fixed; inset: 0; background: #000; }
+#stage canvas { display: block; width: 100%; height: 100%; }
+
+#panel {
+  position: fixed;
+  top: 16px; right: 16px; bottom: 16px;
+  width: 340px;
+  background: var(--panel);
+  backdrop-filter: blur(20px) saturate(160%);
+  -webkit-backdrop-filter: blur(20px) saturate(160%);
+  border: 1px solid var(--panel-border);
+  border-radius: 14px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  transition: transform 0.25s ease, opacity 0.25s ease;
+  z-index: 10;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.45);
+}
+#panel:not(.open) { transform: translateX(120%); opacity: 0; pointer-events: none; }
+
+#panel header { display: flex; justify-content: space-between; align-items: center; }
+#panel h1 { font-size: 15px; margin: 0; font-weight: 600; letter-spacing: 0.02em; }
+
+#panel-toggle, #panel-show {
+  background: none; border: none; color: var(--fg); cursor: pointer;
+  font-size: 18px; padding: 4px 8px; border-radius: 6px;
+}
+#panel-toggle:hover, #panel-show:hover { background: var(--row-hover); }
+
+#panel-show {
+  position: fixed; top: 16px; right: 16px; z-index: 10;
+  background: var(--panel); border: 1px solid var(--panel-border); border-radius: 10px;
+  width: 40px; height: 40px; font-size: 18px;
+  backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+}
+
+.row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.row label { font-size: 12px; color: var(--muted); display: flex; flex-direction: column; gap: 4px; flex: 1; min-width: 80px; }
+.row label input, .row select {
+  background: rgba(255,255,255,0.04); border: 1px solid var(--panel-border);
+  color: var(--fg); border-radius: 7px; padding: 6px 8px; font: inherit; font-size: 13px;
+}
+.row select { width: 100%; }
+
+button {
+  background: rgba(255,255,255,0.06); color: var(--fg);
+  border: 1px solid var(--panel-border); border-radius: 7px;
+  padding: 7px 11px; font: inherit; font-size: 13px; cursor: pointer;
+  transition: background 0.12s, border-color 0.12s;
+}
+button:hover { background: rgba(255,255,255,0.1); }
+button.primary { background: var(--accent); border-color: var(--accent); color: white; }
+button.primary:hover { background: var(--accent-hover); border-color: var(--accent-hover); }
+
+.muted { color: var(--muted); font-size: 12px; }
+.small { font-size: 11px; }
+#folder-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+#list-wrap { flex: 1; overflow: hidden; display: flex; flex-direction: column; gap: 8px; min-height: 0; }
+
+/* Virtualized list — only ~30 rows in the DOM at a time, regardless of total */
+.vlist {
+  position: relative;
+  overflow-y: auto;
+  overflow-x: hidden;
+  flex: 1;
+  border-top: 1px solid var(--panel-border);
+  contain: strict;            /* helps the browser short-circuit layout work */
+  scrollbar-width: thin;
+}
+.vlist-spacer {
+  position: relative;
+  width: 100%;
+  pointer-events: none;       /* rows handle pointer events */
+}
+.vlist-row {
+  position: absolute;
+  left: 0; right: 0;
+  display: flex; align-items: center; gap: 8px;
+  padding: 0 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  user-select: none;
+  font-size: 12px;
+  pointer-events: auto;
+  contain: content;
+}
+.vlist-row:hover { background: var(--row-hover); }
+.vlist-row.active { background: var(--row-active); }
+.vlist-row .idx {
+  color: var(--muted);
+  width: 36px; flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+.vlist-row .name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+footer { border-top: 1px solid var(--panel-border); padding-top: 8px; }
+kbd {
+  background: rgba(255,255,255,0.08); border: 1px solid var(--panel-border);
+  border-radius: 4px; padding: 1px 5px; font-family: inherit; font-size: 10px;
+}
+
+body.fullscreen #panel { transform: translateX(120%); opacity: 0; pointer-events: none; }
+body.idle { cursor: none; }
+body.idle #panel-show { opacity: 0; }
