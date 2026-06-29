@@ -36,40 +36,49 @@ const randInRange = (a: number, b: number) => a + Math.random() * (b - a);
 /**
  * Compose a randomized Ken-Burns start/end keyframe for one slide.
  *
- * Two regimes (chosen from the texture's intrinsic orientation):
+ * Two regimes selected from the texture's intrinsic orientation:
  *
  *   HORIZONTAL (aspect ≥ 1.0): pure COVER, zoom 1.0 ↔ 1.10, random direction.
  *     Pan is relative [-1, 1] per axis — the shader clamps to the per-axis
- *     safe range so portrait-on-landscape or matched aspects all behave well.
- *     This is exactly the prior horizontal behaviour — unchanged.
+ *     safe range so aspect-matched and slightly-mismatched horizontals all
+ *     behave well. This is the prior horizontal behaviour — unchanged.
  *
- *   VERTICAL (aspect < 1.0): contain-capable, zoom 0 ↔ 1.10. The `0` is
- *     resolved in `sampleSlideContain` to containScale (whole photo visible,
- *     bars filled with blurred-self backdrop). The other keyframe is a tight
- *     cover. Random which keyframe is start.
+ *   VERTICAL (aspect < 1.0): photo height is ALWAYS ≥ 105 % of viewport
+ *     (never letterboxed top/bottom). Min keyframe random ∈ [1.05, 1.20] of
+ *     viewport height, max keyframe random ∈ [1.20, 1.40]. Random direction.
+ *     For a vertical photo on a landscape screen this means the image
+ *     extends past the screen vertically (top/bottom cropped) while still
+ *     being narrower than the screen width — the sides are filled with the
+ *     blurred-self backdrop. The zoom factor is `heightFactor × scale.y`
+ *     where scale.y = imgAspect / screenAspect is the cover-fit ratio.
  */
-function randPanZoom(imgAspect: number): LoadedSlide['panZoom'] {
-  const startFull = Math.random() > 0.5;
-  const tightZ    = randInRange(1.08, 1.12);
+function randPanZoom(imgAspect: number, screenAspect: number): LoadedSlide['panZoom'] {
+  const startMin = Math.random() > 0.5;
   const rel = (): [number, number] => [
     (Math.random() * 2 - 1) * 0.85,
     (Math.random() * 2 - 1) * 0.85,
   ];
 
-  if (imgAspect < 1.0) {
-    // Vertical: one keyframe shows the whole photo (param = 0)
-    return startFull
-      ? { z0: 0.0,    pan0: [0, 0],   z1: tightZ, pan1: rel() }
-      : { z0: tightZ, pan0: rel(),    z1: 0.0,    pan1: [0, 0] };
+  if (imgAspect < 1.0 && imgAspect < screenAspect) {
+    // Vertical photo on a wider screen — use heightFactor regime
+    const scaleY = imgAspect / screenAspect;     // < 1
+    const minH = randInRange(1.05, 1.20);
+    const maxH = minH + randInRange(0.10, 0.20); // tighter keyframe
+    const zMin = minH * scaleY;
+    const zMax = maxH * scaleY;
+    return startMin
+      ? { z0: zMin, pan0: rel(), z1: zMax, pan1: rel() }
+      : { z0: zMax, pan0: rel(), z1: zMin, pan1: rel() };
   }
 
-  // Horizontal: cover throughout, random pan at both keyframes
+  // Horizontal (or vertical-on-portrait): cover throughout, zoom 1.0 ↔ 1.15–1.30
+  const tightZ   = randInRange(1.15, 1.30);
   const coverPan = rel();
   const tightPan: [number, number] = [
     -coverPan[0] * randInRange(0.7, 1.0) + (Math.random() - 0.5) * 0.15,
     -coverPan[1] * randInRange(0.7, 1.0) + (Math.random() - 0.5) * 0.15,
   ];
-  return startFull
+  return startMin
     ? { z0: 1.0,    pan0: coverPan, z1: tightZ, pan1: tightPan }
     : { z0: tightZ, pan0: tightPan, z1: 1.0,    pan1: coverPan };
 }
@@ -323,7 +332,7 @@ void main(){ fragColor = vec4(0.0); }`;
   jump(index: number) {
     if (index < 0 || index >= this.items.length) return;
     if (index === this.cursor) return;
-    this.beginTransition(index);
+    this.beginTransition(index).catch(() => {});
   }
   getCursor() { return this.cursor; }
 
@@ -350,7 +359,7 @@ void main(){ fragColor = vec4(0.0); }`;
       console.error('[slideshow] no loadable items in folder');
       return;
     }
-    this.beginTransition(next);
+    this.beginTransition(next).catch(() => {});
   }
 
   private preloadWindow() {
@@ -381,14 +390,25 @@ void main(){ fragColor = vec4(0.0); }`;
     }
   }
 
-  /** Resolve up to N previous slides for the vintage bg pile. */
+  /**
+   * Resolve up to N previous slides for the vintage bg pile.
+   *
+   * Tolerant: skips entries already known to be failed, and skips per-entry
+   * load rejections (the entry gets added to `this.failed` by loadSlide on
+   * its way out). Walks back through the items as far as needed to gather
+   * up to N loadable history slides; returns however many it managed to
+   * load, even if fewer than N (the scene just shows fewer bg cards).
+   */
   private async historySlides(n: number): Promise<LoadedSlide[]> {
     const out: LoadedSlide[] = [];
-    for (let d = 1; d <= n; d++) {
+    const tried = new Set<ImageEntry>();
+    for (let d = 1; d < this.items.length && out.length < n; d++) {
       const idx = (this.cursor - d + this.items.length) % this.items.length;
       const entry = this.items[idx];
-      if (!entry) continue;
-      out.push(await this.loadSlide(entry));
+      if (!entry || tried.has(entry) || this.failed.has(entry)) continue;
+      tried.add(entry);
+      try { out.push(await this.loadSlide(entry)); }
+      catch { /* logged + added to failed by loadSlide */ }
     }
     return out;
   }
@@ -410,9 +430,11 @@ void main(){ fragColor = vec4(0.0); }`;
         const url = URL.createObjectURL(blob);
         const texture = await Assets.load<Texture>({ src: url, parser: 'loadTextures' });
         const aspect = texture.width / Math.max(1, texture.height);
+        const screen = this.app.renderer.screen;
+        const screenAspect = screen.width / Math.max(1, screen.height);
         return {
           entry, texture, url,
-          panZoom: randPanZoom(aspect),
+          panZoom: randPanZoom(aspect, screenAspect),
           fadeMag: randInRange(0.08, 0.14),
         };
       } catch (err) {
@@ -566,7 +588,8 @@ void main(){ fragColor = vec4(0.0); }`;
         if ((now - this.slideStart) / 1000 >= this.dwellSec) {
           const next = this.findLoadable(this.cursor, 1);
           if (next === null) { this.setPlaying(false); return; }
-          this.beginTransition(next);
+          // Fire-and-forget; rejections are already logged inside.
+          this.beginTransition(next).catch(() => {});
         }
       }
       return;
@@ -601,7 +624,7 @@ void main(){ fragColor = vec4(0.0); }`;
       if (elapsed >= this.dwellSec) {
         const next = this.findLoadable(this.cursor, 1);
         if (next === null) { this.setPlaying(false); return; }
-        this.beginTransition(next);
+        this.beginTransition(next).catch(() => {});
       }
     }
   }
