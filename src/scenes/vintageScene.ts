@@ -155,25 +155,25 @@ export class VintageScene {
     const fadeMs = fadeDurSec * 1000;
 
     // Camera: pile slowly rotates and zooms over each cycle. Targets are
-    // ABSOLUTE bounded values (never accumulate) — soft pull-back keeps the
-    // pile centered around scale ~1.05, rotation ~0°.
+    // ABSOLUTE bounded values (never accumulate). Research-backed for a
+    // visibly-alive-but-not-distracting screensaver feel:
     //
-    //   scale  ∈ [1.00 .. 1.12]   — bias toward zooming in
-    //   rot    ∈ [-0.07 .. +0.07] rad (~±4°)
+    //   scale  ∈ [1.00 .. 1.22]   — standard Ken Burns range (2 %/s on 10 s dwell)
+    //   rot    ∈ [-0.105 .. +0.105] rad (~±6°)
     const curRot = this.cardsLayer.rotation;
     const curScale = this.cardsLayer.scale.x;
 
-    // Zoom: 70 % of cycles zoom IN from current, 30 % pull back. Cap at 1.12.
-    const wantsZoomIn = curScale < 1.04 || Math.random() < 0.7;
+    // Zoom: 70 % of cycles zoom IN from current, 30 % pull back. Cap at 1.22.
+    const wantsZoomIn = curScale < 1.10 || Math.random() < 0.7;
     const targetScale = wantsZoomIn
-      ? Math.min(1.12, curScale + rrange(0.04, 0.08))
-      : Math.max(1.00, curScale - rrange(0.04, 0.08));
+      ? Math.min(1.22, curScale + rrange(0.07, 0.14))
+      : Math.max(1.00, curScale - rrange(0.07, 0.14));
 
-    // Rotation: damp the current value 40 % toward 0, then add a small kick.
-    // Caps at ±0.07 rad. Always tends back to neutral over time.
+    // Rotation: damp the current value 40 % toward 0, then add a kick.
+    // Caps at ±0.105 rad (~±6°). Tends back to neutral over time.
     const dirSign = Math.random() > 0.5 ? 1 : -1;
-    const targetRot = Math.max(-0.07, Math.min(0.07,
-      curRot * 0.4 + dirSign * rrange(0.02, 0.045),
+    const targetRot = Math.max(-0.105, Math.min(0.105,
+      curRot * 0.4 + dirSign * rrange(0.035, 0.075),
     ));
 
     this.camera = {
@@ -267,6 +267,21 @@ export class VintageScene {
     }
   }
 
+  /**
+   * Shift every internal timestamp forward by deltaMs. Used by the engine
+   * to compensate for time spent paused — keeps drift/fade/camera animations
+   * from "jumping" when the user resumes playback after a long pause.
+   */
+  shiftTime(deltaMs: number) {
+    if (deltaMs <= 0) return;
+    this.camera.start += deltaMs;
+    for (const c of this.cards) {
+      c.birthTime   += deltaMs;
+      c.fadeStart   += deltaMs;
+      c.destroyAtMs += deltaMs;
+    }
+  }
+
   reset() {
     for (const c of this.cards) {
       this.cardsLayer.removeChild(c.container);
@@ -328,9 +343,13 @@ export class VintageScene {
     const container = new Container();
 
     const { w: photoW, h: photoH } = this.photoSize(texture);
-    // FIXED border — same pixel width on every card regardless of photo size.
-    // Small enough to read as a tight snapshot edge, not a thick polaroid frame.
-    const border = 8;
+    // Border sized for an AUTHENTIC printed photo at typical viewing distance.
+    // Industry standard pro-lab print = 1/4" border on a 4×6 ≈ 5 % of the
+    // short edge. Photos in the pile are sized ~80 % of viewport short edge,
+    // so 4.5 % of viewport short edge ≈ 5.6 % of photo short edge — squarely
+    // in the "this is obviously a paper print" range. Uniform across all
+    // cards (driven by viewport, not per-card dimensions).
+    const border = Math.round(Math.min(this.screenW, this.screenH) * 0.045);
     const totalW = photoW + 2 * border;
     const totalH = photoH + 2 * border;
     const x0 = -totalW / 2;
@@ -371,19 +390,22 @@ export class VintageScene {
       baseY: pose.y,
       baseAngle: pose.angle,
       baseScale: pose.scale,
-      // Very subtle drift: long periods, small amplitudes
+      // Drift — visibly alive within the slow camera move. Periods short
+      // enough to perceive motion within a 10 s dwell; amplitudes big
+      // enough to read at viewing distance without crossing into "look
+      // at me" territory.
       driftPhaseX: rand() * TAU,
       driftPhaseY: rand() * TAU,
       driftPhaseR: rand() * TAU,
       driftPhaseS: rand() * TAU,
-      driftPeriodX: rrange(35, 55),
-      driftPeriodY: rrange(42, 65),
-      driftPeriodR: rrange(50, 80),
-      driftPeriodS: rrange(45, 70),
-      driftAmpX: rrange(3, 6),                    // pixels
-      driftAmpY: rrange(2, 5),
-      driftAmpR: rrange(0.003, 0.007),            // radians (~0.2°–0.4°)
-      driftAmpS: rrange(0.003, 0.006),            // scale (±0.5%)
+      driftPeriodX: rrange(20, 35),
+      driftPeriodY: rrange(25, 40),
+      driftPeriodR: rrange(28, 45),
+      driftPeriodS: rrange(25, 40),
+      driftAmpX: rrange(8, 14),                   // pixels
+      driftAmpY: rrange(6, 11),
+      driftAmpR: rrange(0.014, 0.022),            // radians (~0.8°–1.3°)
+      driftAmpS: rrange(0.008, 0.014),            // ±1 % scale
       fadeStart: 0,
       fadeDur: 0,
       fadeFrom: 0,
