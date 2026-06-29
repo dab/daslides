@@ -1,4 +1,5 @@
 import {
+  BlurFilter,
   Container,
   Graphics,
   Sprite,
@@ -327,24 +328,21 @@ export class VintageScene {
     const container = new Container();
 
     const { w: photoW, h: photoH } = this.photoSize(texture);
-    // Snapshot-style border — 2.5 % of photo width, 8 px minimum.
-    // Big enough to read as a clear paper edge at typical viewing distance.
-    const border = Math.max(8, photoW * 0.025);
+    // FIXED border — same pixel width on every card regardless of photo size.
+    // Small enough to read as a tight snapshot edge, not a thick polaroid frame.
+    const border = 8;
     const totalW = photoW + 2 * border;
     const totalH = photoH + 2 * border;
     const x0 = -totalW / 2;
     const y0 = -totalH / 2;
 
-    // Soft shadow — slightly larger, offset down-right
+    // Soft drop shadow — black rect offset down-right with a BlurFilter for
+    // a subtle blurred penumbra (rather than a hard-edged offset rect).
     const shadow = new Graphics();
-    const sOff = 14, sSpread = 10;
-    shadow.rect(
-      x0 - sSpread + sOff * 0.35,
-      y0 - sSpread + sOff,
-      totalW + 2 * sSpread,
-      totalH + 2 * sSpread,
-    );
-    shadow.fill({ color: 0x000000, alpha: 0.45 });
+    const shadowOffset = 6;
+    shadow.rect(x0 + shadowOffset, y0 + shadowOffset, totalW, totalH);
+    shadow.fill({ color: 0x000000, alpha: 0.30 });
+    shadow.filters = [new BlurFilter({ strength: 14, quality: 4 })];
 
     // Warm off-white paper
     const paper = new Graphics();
