@@ -72,6 +72,16 @@ function loadFiles(name: string, files: ImageEntry[]) {
     alert('No images found in the selected folder.');
     return;
   }
+  // "Shuffle on load" toggle — Fisher–Yates shuffle the items array before
+  // handing it to the engine, so the slideshow doesn't always start at
+  // file #1. Browsers persist the checkbox state across reloads.
+  const shuffleOnLoad = (document.getElementById('shuffle-on-load') as HTMLInputElement)?.checked;
+  if (shuffleOnLoad && files.length > 1) {
+    for (let i = files.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [files[i], files[j]] = [files[j], files[i]];
+    }
+  }
   items = files;
   ui.setFolderName(name);
   ui.renderList(files);

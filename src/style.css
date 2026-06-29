@@ -56,6 +56,21 @@ html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg); o
 
 .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
 .row label { font-size: 12px; color: var(--muted); display: flex; flex-direction: column; gap: 4px; flex: 1; min-width: 80px; }
+.inline-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--fg);
+  cursor: pointer;
+  user-select: none;
+}
+.inline-toggle input[type="checkbox"] {
+  accent-color: var(--accent);
+  margin: 0;
+  cursor: pointer;
+}
+
 .row label input, .row select {
   background: rgba(255,255,255,0.04); border: 1px solid var(--panel-border);
   color: var(--fg); border-radius: 7px; padding: 6px 8px; font: inherit; font-size: 13px;
