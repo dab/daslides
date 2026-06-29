@@ -119,6 +119,18 @@ export class Engine {
   private tDurSec = 1.5;
   /** Holds the display awake while playback runs. */
   private wakeLock: WakeLockHandle = createWakeLock();
+
+  /**
+   * Pause tracking. When paused we stop Pixi's ticker entirely (no rAF, no
+   * render, ~0 % GPU). On resume we shift all animation timestamps forward
+   * by the paused duration so drift/camera don't visibly jump.
+   */
+  private pauseStartedAt = 0;
+  /**
+   * Set when navigation (next/prev/jump) is invoked while paused — the
+   * ticker resumes for the transition, then the tick loop stops it again.
+   */
+  private restartPauseAfterTransition = false;
   private slideStart = 0;
   private transStart = 0;
 
@@ -318,21 +330,65 @@ void main(){ fragColor = vec4(0.0); }`;
   }
 
   setPlaying(p: boolean) {
+    const wasPlaying = this.playing;
+    if (p === wasPlaying) return;
     this.playing = p;
-    if (p) this.slideStart = performance.now() - (this.uniforms.uniforms.uDwellA as number) * this.dwellSec * 1000;
-    // Block the OS screensaver + display sleep while playing.
-    if (p) void this.wakeLock.acquire();
-    else   void this.wakeLock.release();
+
+    if (p) {
+      // Resume: shift every animation timestamp forward by the paused duration,
+      // then restart the ticker. Drift, camera, dwell — none of them notice
+      // that time was suspended.
+      if (this.pauseStartedAt > 0) {
+        const delta = performance.now() - this.pauseStartedAt;
+        this.shiftAllTimestamps(delta);
+        this.pauseStartedAt = 0;
+      }
+      this.app.ticker.start();
+      void this.wakeLock.acquire();
+    } else {
+      // Pause: stop the ticker entirely so the renderer does no work.
+      // Note slideStart already reflects the just-completed pause window,
+      // so when we resume we just shift it (see above).
+      this.pauseStartedAt = performance.now();
+      this.app.ticker.stop();
+      void this.wakeLock.release();
+    }
     this.onPlayingChange?.(p);
   }
   togglePlay() { this.setPlaying(!this.playing); }
+
+  /** Shift all animation timestamps to compensate for pause duration. */
+  private shiftAllTimestamps(deltaMs: number) {
+    this.slideStart += deltaMs;
+    this.transStart += deltaMs;
+    this.vintageScene?.shiftTime(deltaMs);
+  }
+
+  /** One-shot render — used when paused and we need to display a new state. */
+  private renderOnce() {
+    this.app.renderer.render({ container: this.app.stage });
+  }
+
+  /**
+   * Called from tick when a transition finishes. If navigation happened
+   * while paused, we resumed the ticker just to animate the transition —
+   * now that it's done, render one final frame and stop the ticker again.
+   */
+  private maybeRePauseAfterTransition() {
+    if (!this.restartPauseAfterTransition) return;
+    this.restartPauseAfterTransition = false;
+    // Render the settled frame, then stop. Re-pausing the clock isn't needed
+    // (pauseStartedAt was kept fresh in navigateTo).
+    this.renderOnce();
+    this.app.ticker.stop();
+  }
 
   next() { this.advance(+1); }
   prev() { this.advance(-1); }
   jump(index: number) {
     if (index < 0 || index >= this.items.length) return;
     if (index === this.cursor) return;
-    this.beginTransition(index).catch(() => {});
+    this.navigateTo(index);
   }
   getCursor() { return this.cursor; }
 
@@ -359,7 +415,27 @@ void main(){ fragColor = vec4(0.0); }`;
       console.error('[slideshow] no loadable items in folder');
       return;
     }
-    this.beginTransition(next).catch(() => {});
+    this.navigateTo(next);
+  }
+
+  /**
+   * Start a transition to `index`. If the slideshow is paused we briefly
+   * resume the ticker so the transition can animate, then re-pause once it
+   * completes (handled in the tick loop via `restartPauseAfterTransition`).
+   */
+  private navigateTo(index: number) {
+    if (!this.playing) {
+      this.restartPauseAfterTransition = true;
+      // Resume ticker without changing the `playing` flag — that flag controls
+      // dwell-based auto-advance, which we don't want while "paused".
+      if (this.pauseStartedAt > 0) {
+        const delta = performance.now() - this.pauseStartedAt;
+        this.shiftAllTimestamps(delta);
+        this.pauseStartedAt = performance.now(); // freeze the clock again right away
+      }
+      this.app.ticker.start();
+    }
+    this.beginTransition(index).catch(() => {});
   }
 
   private preloadWindow() {
@@ -583,6 +659,7 @@ void main(){ fragColor = vec4(0.0); }`;
       if (this.inTransition && now - this.transStart >= this.tDurSec * 1000) {
         this.inTransition = false;
         this.slideStart = now;
+        this.maybeRePauseAfterTransition();
       }
       if (!this.inTransition && this.playing) {
         if ((now - this.slideStart) / 1000 >= this.dwellSec) {
@@ -617,6 +694,7 @@ void main(){ fragColor = vec4(0.0); }`;
         this.uniforms.uniforms.uDwellA = newDwellA;
         this.slideStart = now - newDwellA * this.dwellSec * 1000;
         this.inTransition = false;
+        this.maybeRePauseAfterTransition();
       }
     } else if (this.playing) {
       const elapsed = (now - this.slideStart) / 1000;
