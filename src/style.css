@@ -94,6 +94,20 @@ body.has-folder .empty { opacity: 0; pointer-events: none; }
 }
 .btn--primary:hover { background: #f0cd92; border-color: #f0cd92; }
 
+/* Quiet secondary action (e.g. "or select photos") */
+.linkbtn {
+  border: none; background: none; color: var(--muted);
+  font-size: 13px; padding: 6px 8px; border-radius: var(--r-sm);
+  text-decoration: underline; text-underline-offset: 3px;
+  transition: color 0.14s var(--ease);
+}
+.linkbtn:hover { color: var(--fg); }
+
+/* Touch devices: folder picking (webkitdirectory) doesn't work — the photo
+   picker leads, so hide the desktop-only folder affordances. */
+body.touch #pick-folder,
+body.touch #pick-photos-empty { display: none; }
+
 /* ── Bottom control bar ───────────────────────────────────────────────── */
 
 .scrim {

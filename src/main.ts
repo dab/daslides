@@ -4,6 +4,7 @@ import {
   pickDirectory,
   entriesFromFileList,
   hasDirectoryPicker,
+  isBrave,
   type ImageEntry,
 } from './folder.ts';
 import type { TransitionId } from './transitions/index.ts';
@@ -28,19 +29,26 @@ await engine.init(stage);
 
 const ui = new UI({
   onPickFolder: async () => {
-    try {
-      if (hasDirectoryPicker()) {
+    // Chrome/Edge: native File System Access picker. Brave exposes the API but
+    // blocks the call, so skip FSA there and use the <input webkitdirectory>
+    // fallback (which works on Brave, Firefox, and Safari desktop).
+    if (hasDirectoryPicker() && !(await isBrave())) {
+      try {
         const { name, files } = await pickDirectory();
         loadFiles(name, files);
-      } else {
-        (document.getElementById('pick-fallback') as HTMLInputElement).click();
+        return;
+      } catch (err: any) {
+        if (err?.name === 'AbortError') return; // user cancelled — done
+        console.warn('[slideshow] directory picker failed, using fallback:', err);
       }
-    } catch (err: any) {
-      if (err?.name !== 'AbortError') console.error(err);
     }
+    (document.getElementById('pick-fallback') as HTMLInputElement).click();
   },
-  onFallbackPicked: (list) => {
-    const { name, files } = entriesFromFileList(list);
+  onPickPhotos: () => {
+    (document.getElementById('pick-photos') as HTMLInputElement).click();
+  },
+  onFilesPicked: (list) => {
+    const { name, files } = entriesFromFileList(list, 'Selected photos');
     loadFiles(name, files);
   },
   onPlayToggle: () => engine.togglePlay(),

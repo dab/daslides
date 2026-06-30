@@ -26,6 +26,7 @@
         <h1 class="empty__title">Slideshow</h1>
         <p class="empty__sub">Point it at a folder of photographs.</p>
         <button id="pick-empty" class="btn btn--primary">Choose folder…</button>
+        <button id="pick-photos-empty" class="linkbtn">or select photos</button>
         <p class="empty__formats">JPEG · PNG · HEIC · WebP · AVIF · RAW · TIFF</p>
       </div>
     </section>
@@ -85,7 +86,9 @@
       <div class="panel__body">
         <div class="field">
           <button id="pick-folder" class="btn btn--primary btn--block">Choose folder…</button>
+          <button id="pick-photos-btn" class="btn btn--block">Choose photos…</button>
           <input id="pick-fallback" type="file" webkitdirectory multiple accept="image/*" hidden />
+          <input id="pick-photos" type="file" multiple accept="image/*" hidden />
         </div>
 
         <div class="field">

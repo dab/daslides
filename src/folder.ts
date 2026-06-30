@@ -26,6 +26,27 @@ const naturalSort = (a: string, b: string) =>
 export const hasDirectoryPicker = () =>
   typeof (window as any).showDirectoryPicker === 'function';
 
+/**
+ * Brave exposes `showDirectoryPicker` but blocks the call (File System Access
+ * API disabled by default), so the picker silently fails. Detect Brave and skip
+ * FSA entirely — the `<input webkitdirectory>` fallback works there.
+ */
+export async function isBrave(): Promise<boolean> {
+  try {
+    const b = (navigator as any).brave;
+    return !!(b && typeof b.isBrave === 'function' && (await b.isBrave()));
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Touch-primary device (phone/tablet). `webkitdirectory` doesn't work on mobile,
+ * so the UI leads with the multi-file photo picker instead of "Choose folder".
+ */
+export const isTouchPrimary = (): boolean =>
+  matchMedia('(pointer: coarse)').matches && !matchMedia('(pointer: fine)').matches;
+
 /** Open the directory picker. Returns { name, files }. */
 export async function pickDirectory(): Promise<{ name: string; files: ImageEntry[] }> {
   if (hasDirectoryPicker()) {
@@ -63,8 +84,16 @@ async function collectFromHandle(
   return out;
 }
 
-/** Fallback: turn a FileList from <input webkitdirectory> into ImageEntries. */
-export function entriesFromFileList(list: FileList): { name: string; files: ImageEntry[] } {
+/**
+ * Fallback: turn a FileList into ImageEntries. Handles both a directory
+ * selection (`<input webkitdirectory>`, files carry `webkitRelativePath`) and a
+ * flat multi-file selection (`<input multiple>`, used on mobile / as a universal
+ * escape hatch). `fallbackName` labels the latter when there's no folder root.
+ */
+export function entriesFromFileList(
+  list: FileList,
+  fallbackName = 'Selected files',
+): { name: string; files: ImageEntry[] } {
   const files: ImageEntry[] = [];
   let root = '';
   for (const f of Array.from(list)) {
@@ -79,5 +108,5 @@ export function entriesFromFileList(list: FileList): { name: string; files: Imag
     });
   }
   files.sort((a, b) => naturalSort(a.path, b.path));
-  return { name: root || 'Selected files', files };
+  return { name: root || fallbackName, files };
 }
