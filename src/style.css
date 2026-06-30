@@ -326,6 +326,28 @@ kbd {
   border-bottom-width: 2px; border-radius: 5px; padding: 2px 7px; min-width: 14px; text-align: center;
 }
 
+/* ── Toast (install / fullscreen hints) ───────────────────────────────── */
+.toast {
+  position: fixed; left: 50%; bottom: 96px; z-index: 50;
+  transform: translateX(-50%) translateY(8px);
+  max-width: min(420px, calc(100vw - 32px));
+  padding: 11px 16px; border-radius: var(--r-md);
+  background: var(--glass-strong);
+  backdrop-filter: blur(24px) saturate(150%);
+  -webkit-backdrop-filter: blur(24px) saturate(150%);
+  border: 1px solid var(--hairline);
+  box-shadow: 0 16px 44px rgba(0, 0, 0, 0.5);
+  color: var(--fg); font-size: 13.5px; line-height: 1.45; text-align: center;
+  opacity: 0; pointer-events: none;
+  transition: opacity 0.28s var(--ease), transform 0.28s var(--ease);
+}
+.toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+/* Standalone (installed) app: it's already immersive — the fullscreen button
+   and the install entry are meaningless, so hide them. */
+body.standalone #fullscreen,
+body.standalone #install-btn { display: none; }
+
 @keyframes fade { from { opacity: 0; } to { opacity: 1; } }
 @keyframes pop { from { opacity: 0; transform: scale(0.96) translateY(8px); } to { opacity: 1; transform: none; } }
 @keyframes progressGrow { from { transform: scaleX(0); } to { transform: scaleX(1); } }

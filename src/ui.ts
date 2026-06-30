@@ -136,6 +136,10 @@ export class UI {
   private emptyPhotos = $<HTMLLabelElement>('empty-photos');
   private fallback = $<HTMLInputElement>('pick-fallback');
   private photosInput = $<HTMLInputElement>('pick-photos');
+  private toastEl = $<HTMLDivElement>('toast');
+  private installBtn = $<HTMLButtonElement>('install-btn');
+  private deferredPrompt: any = null;
+  private toastTimer = 0;
   private folderName = $<HTMLSpanElement>('folder-name');
   private listCount = $<HTMLSpanElement>('list-count');
   private counter = $<HTMLSpanElement>('counter');
@@ -161,6 +165,9 @@ export class UI {
   private playing = false;
   private total = 0;
   private dwellSec = 10;
+  private isIOS =
+    /iphone|ipad|ipod/i.test(navigator.userAgent) ||
+    (navigator.maxTouchPoints > 1 && /Macintosh/.test(navigator.userAgent));
 
   constructor(private b: UIBindings) {
     this.vlist = new VirtualList($('list'), $('list-spacer'), (i) => {
@@ -205,9 +212,13 @@ export class UI {
 
     window.addEventListener('keydown', (e) => this.onKey(e));
 
-    document.addEventListener('fullscreenchange', () => {
-      this.body.classList.toggle('fullscreen', !!document.fullscreenElement);
-    });
+    const onFsChange = () =>
+      this.body.classList.toggle('fullscreen',
+        !!(document.fullscreenElement || (document as any).webkitFullscreenElement));
+    document.addEventListener('fullscreenchange', onFsChange);
+    document.addEventListener('webkitfullscreenchange', onFsChange);
+
+    this.setupPwa();
 
     // Activity wakes the controls.
     window.addEventListener('mousemove', () => this.wake(), { passive: true });
@@ -273,6 +284,74 @@ export class UI {
       if (this.panel.contains(document.activeElement)) return; // keyboard users
       this.body.classList.add('idle');
     }, 2500);
+  }
+
+  /**
+   * Install / Add-to-Home-Screen wiring. iPhone has no element Fullscreen API,
+   * so the immersive experience there is a standalone home-screen app; Android
+   * gets the same via the install prompt.
+   */
+  private setupPwa() {
+    const standalone =
+      (navigator as any).standalone === true ||
+      matchMedia('(display-mode: standalone)').matches ||
+      matchMedia('(display-mode: fullscreen)').matches;
+    if (standalone) {
+      this.body.classList.add('standalone'); // already immersive — hide FS + install
+      return;
+    }
+
+    // Android / desktop Chromium: capture the prompt and offer "Install app".
+    window.addEventListener('beforeinstallprompt', (e: Event) => {
+      e.preventDefault();
+      this.deferredPrompt = e;
+      this.installBtn.textContent = 'Install app';
+      this.installBtn.hidden = false;
+    });
+    window.addEventListener('appinstalled', () => {
+      this.deferredPrompt = null;
+      this.installBtn.hidden = true;
+      this.toast('Installed — launch it from your home screen.');
+    });
+
+    // iOS can't fire beforeinstallprompt — surface a manual entry.
+    if (this.isIOS) {
+      this.installBtn.textContent = 'Add to Home Screen';
+      this.installBtn.hidden = false;
+    }
+
+    this.installBtn.addEventListener('click', async () => {
+      if (this.deferredPrompt) {
+        this.deferredPrompt.prompt();
+        try { await this.deferredPrompt.userChoice; } catch {}
+        this.deferredPrompt = null;
+        this.installBtn.hidden = true;
+      } else {
+        this.showInstallHint();
+      }
+    });
+  }
+
+  /** Toast the platform-appropriate way to install / go fullscreen. */
+  showInstallHint() {
+    this.toast(
+      this.isIOS
+        ? 'For fullscreen on iPhone: tap Share, then “Add to Home Screen”.'
+        : 'Install from your browser menu → “Install app” / “Add to Home Screen”.',
+    );
+  }
+
+  private toast(msg: string) {
+    this.toastEl.textContent = msg;
+    this.toastEl.hidden = false;
+    this.toastEl.classList.remove('show');
+    void this.toastEl.offsetWidth; // restart the fade
+    this.toastEl.classList.add('show');
+    clearTimeout(this.toastTimer);
+    this.toastTimer = window.setTimeout(() => {
+      this.toastEl.classList.remove('show');
+      this.toastTimer = window.setTimeout(() => { this.toastEl.hidden = true; }, 300);
+    }, 4200);
   }
 
   setPlaying(playing: boolean) {

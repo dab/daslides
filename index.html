@@ -4,6 +4,17 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <title>Slideshow</title>
+
+    <!-- Installable PWA. iPhone has no Fullscreen API for elements, so the
+         immersive/fullscreen experience there is "Add to Home Screen" (standalone). -->
+    <link rel="manifest" href="manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="apple-touch-icon.png" />
+    <link rel="icon" href="icon.svg" type="image/svg+xml" />
+    <meta name="theme-color" content="#0a0a0b" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Slideshow" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -113,6 +124,7 @@
         <div class="field">
           <label for="pick-fallback" id="pick-folder" class="btn btn--primary btn--block">Choose folder…</label>
           <label for="pick-photos" id="pick-photos-btn" class="btn btn--block">Choose photos…</label>
+          <button id="install-btn" class="btn btn--block" hidden>Add to Home Screen</button>
         </div>
 
         <div class="field">
@@ -169,6 +181,8 @@
         </dl>
       </div>
     </div>
+
+    <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 
     <!-- File inputs live at top level (NOT inside #panel, which is inert/hidden
          when closed) so focusing them on selection never sits inside a hidden

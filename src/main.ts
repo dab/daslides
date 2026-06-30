@@ -30,8 +30,13 @@ const ui = new UI({
     }
   },
   onFullscreen: () => {
-    if (!document.fullscreenElement) document.documentElement.requestFullscreen?.();
-    else document.exitFullscreen?.();
+    const el = document.documentElement as any;
+    const doc = document as any;
+    const req = el.requestFullscreen || el.webkitRequestFullscreen;
+    const exit = doc.exitFullscreen || doc.webkitExitFullscreen;
+    const active = document.fullscreenElement || doc.webkitFullscreenElement;
+    if (!req) { ui.showInstallHint(); return; } // iPhone: no element Fullscreen API
+    if (!active) req.call(el); else exit?.call(doc);
   },
   onTransition: (id) => engine.setTransition(id as TransitionId),
   onDwell: (s) => engine.setDwell(s),
