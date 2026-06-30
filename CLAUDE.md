@@ -21,7 +21,30 @@ A `Pixi.Container` graph (`scenes/vintageScene.ts`). Currently only the Vintage 
 3. `setTransition(id)` — switches between mesh-visible and scene-visible. In scene mode the engine immediately seeds the scene with the current slide.
 4. Per-frame `tick()`:
    - **shader**: updates `uProgress`/`uDwell*`, promotes B→A when `uProgress` hits 1.
-   - **scene**: calls `scene.tick()`, advances when `dwellSec` elapses.
+   - **scene**: calls `scene.tick(now)`, advances when `dwellSec` elapses.
+
+## Clock + render-on-demand (critical)
+
+All animation timestamps (`slideStart`, `transStart`, and the vintage scene's
+card birth/fade times passed into `tick(now)`/`addPhoto(..., now)`) live in
+**clock time**, not raw `performance.now()`. The clock (`clock()`,
+`freezeClock()`, `unfreezeClock()`) advances only while not paused — so pausing
+is "stop the clock," not "patch every timestamp." Don't reintroduce timestamp
+shifting.
+
+`sync()` is the single place that reconciles renderer + clock + dwell-timer with
+state. The ticker is **stopped** whenever no continuous animation is needed:
+
+- transition in flight, or playing with continuous motion (Ken Burns / Vintage)
+  → ticker runs every frame.
+- playing but the frame is static (Fade with Zoom mid-dwell) → ticker **stopped**;
+  a `setTimeout` (`scheduleDwell`) wakes us to start the next transition.
+- paused → ticker stopped, clock frozen, last frame held.
+
+So a stopped ticker during a Fade dwell is **correct, not a bug** — it's ~0 GPU.
+Any state change while the ticker is stopped must `renderOnce()` (or call
+`sync()`, which does). When switching *into* a shader transition, re-bind the
+current slide (samplers may have been evicted to white in scene mode).
 
 ## Texture lifecycle (critical)
 
@@ -48,7 +71,7 @@ Symptom of breaking these: `Uncaught TypeError: can't access property "alphaMode
 4. Add the `<option>` to `index.html`.
 
 **Scene transition:**
-1. Build a new file in `src/scenes/<name>Scene.ts` that exposes `root: Container`, `tick()`, `reset()`, `heldEntries(): Set<ImageEntry>`, `resize(w, h)`, plus your scene's input API (analogue of `addPhoto`).
+1. Build a new file in `src/scenes/<name>Scene.ts` that exposes `root: Container`, `tick(now)`, `reset()`, `heldEntries(): Set<ImageEntry>`, `resize(w, h)`, plus your scene's input API (analogue of `addPhoto(..., now)`). `now` is engine **clock** time — store it for tween math; never call `performance.now()` inside the scene (it would ignore pause). Cache static card containers with `cacheAsTexture(true)` so per-frame filters (e.g. drop-shadow blur) bake once.
 2. Add `TransitionDef` with `kind: 'scene'`.
 3. Extend `engine.ts` — `setTransition`, `startSlide`, `beginTransition`, `tick` — to dispatch to the new scene. Today's code only special-cases `vintageScene`; you may want to generalize via an interface if you add more.
 

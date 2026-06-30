@@ -6,6 +6,7 @@ import {
   Texture,
 } from 'pixi.js';
 import type { ImageEntry } from '../folder.ts';
+import { TAU, lerp, ease, rand, rndRange as rrange } from '../util.ts';
 
 /**
  * Vintage Prints — pile-of-photos scene.
@@ -94,12 +95,6 @@ interface Camera {
   dur: number;
 }
 
-const TAU = Math.PI * 2;
-const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
-const ease = (t: number) => (t < 0 ? 0 : t > 1 ? 1 : t * t * (3 - 2 * t));
-const rand = () => Math.random();
-const rrange = (a: number, b: number) => a + Math.random() * (b - a);
-
 const BG_SLOTS = 3; // number of background prints behind focal
 
 export class VintageScene {
@@ -150,8 +145,7 @@ export class VintageScene {
    * @param dwellSec how long the focal will stay on screen — used as the
    *                 timescale for the camera ramp.
    */
-  addPhoto(ctx: AddPhotoCtx, fadeDurSec: number, dwellSec: number) {
-    const now = performance.now();
+  addPhoto(ctx: AddPhotoCtx, fadeDurSec: number, dwellSec: number, now: number) {
     const fadeMs = fadeDurSec * 1000;
 
     // Camera: pile slowly rotates and zooms over each cycle. Targets are
@@ -200,7 +194,7 @@ export class VintageScene {
     for (let i = 0; i < BG_SLOTS; i++) {
       const h = ctx.history[i];
       if (!h) break;
-      const card = this.makeCard(h.texture, h.entry, this.bgSlotPose(i));
+      const card = this.makeCard(h.texture, h.entry, this.bgSlotPose(i), now);
       card.fadeFrom = 0;
       card.fadeTo = 1.0;
       card.fadeStart = now;
@@ -211,7 +205,7 @@ export class VintageScene {
     }
 
     // Focal card on top
-    const focalCard = this.makeCard(ctx.focal.texture, ctx.focal.entry, this.focalSlotPose());
+    const focalCard = this.makeCard(ctx.focal.texture, ctx.focal.entry, this.focalSlotPose(), now);
     focalCard.fadeFrom = 0;
     focalCard.fadeTo = 1.0;
     focalCard.fadeStart = now;
@@ -222,9 +216,7 @@ export class VintageScene {
   }
 
   /** Per-frame update — applies fade tween and continuous drift. */
-  tick() {
-    const now = performance.now();
-
+  tick(now: number) {
     // ── Pile camera (whole-scene rotation + zoom) ───────────────────────
     // Linear ramp through the dwell — slow, never resets abruptly. If we run
     // past `dur` (paused, manual nav, etc.) the camera just keeps the final
@@ -264,21 +256,6 @@ export class VintageScene {
       c.container.position.set(c.baseX + dx, c.baseY + dy);
       c.container.rotation = c.baseAngle + dr;
       c.container.scale.set(c.baseScale * (1 + ds));
-    }
-  }
-
-  /**
-   * Shift every internal timestamp forward by deltaMs. Used by the engine
-   * to compensate for time spent paused — keeps drift/fade/camera animations
-   * from "jumping" when the user resumes playback after a long pause.
-   */
-  shiftTime(deltaMs: number) {
-    if (deltaMs <= 0) return;
-    this.camera.start += deltaMs;
-    for (const c of this.cards) {
-      c.birthTime   += deltaMs;
-      c.fadeStart   += deltaMs;
-      c.destroyAtMs += deltaMs;
     }
   }
 
@@ -339,6 +316,7 @@ export class VintageScene {
     texture: Texture,
     entry: ImageEntry,
     pose: SlotPose,
+    now: number,
   ): PrintCard {
     const container = new Container();
 
@@ -384,6 +362,13 @@ export class VintageScene {
     container.rotation = pose.angle;
     container.scale.set(pose.scale);
 
+    // The card's internal geometry never changes after construction — only its
+    // container alpha (fade) and transform (drift/camera) animate. Bake the
+    // whole card (incl. the expensive shadow BlurFilter) into a single texture
+    // once, so each frame just re-transforms a sprite instead of re-running a
+    // blur pass per card. (PixiJS v8 cacheAsTexture — render-to-texture cache.)
+    container.cacheAsTexture(true);
+
     return {
       container, shadow, paper, sprite, entry,
       baseX: pose.x,
@@ -412,7 +397,7 @@ export class VintageScene {
       fadeTo: 1,
       dying: false,
       destroyAtMs: 0,
-      birthTime: performance.now(),
+      birthTime: now,
     };
   }
 }

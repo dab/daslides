@@ -4,65 +4,144 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <title>Slideshow</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700&family=Geist+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
     <link rel="stylesheet" href="/src/style.css" />
   </head>
   <body>
     <div id="stage"></div>
 
-    <aside id="panel" class="open">
-      <header>
-        <h1>Slideshow</h1>
-        <button id="panel-toggle" title="Hide panel (P)">×</button>
+    <!-- ── Empty state ─────────────────────────────────────────────── -->
+    <section id="empty" class="empty">
+      <div class="empty__card">
+        <svg class="empty__mark" viewBox="0 0 48 48" fill="none" aria-hidden="true">
+          <circle cx="24" cy="24" r="21" stroke="currentColor" stroke-width="1.5" />
+          <path d="M24 3v21M44 33 24 24M33 44 24 24M4 33l20-9M15 4l9 20" stroke="currentColor" stroke-width="1.5" />
+          <circle cx="24" cy="24" r="5.5" fill="currentColor" />
+        </svg>
+        <h1 class="empty__title">Slideshow</h1>
+        <p class="empty__sub">Point it at a folder of photographs.</p>
+        <button id="pick-empty" class="btn btn--primary">Choose folder…</button>
+        <p class="empty__formats">JPEG · PNG · HEIC · WebP · AVIF · RAW · TIFF</p>
+      </div>
+    </section>
+
+    <!-- ── Bottom control bar ──────────────────────────────────────── -->
+    <div class="scrim" aria-hidden="true"></div>
+    <footer id="controls" class="controls" role="toolbar" aria-label="Playback controls">
+      <div class="progress" aria-hidden="true"><div id="progress-fill" class="progress__fill"></div></div>
+
+      <div class="controls__bar">
+        <div class="controls__meta">
+          <span id="counter" class="counter" aria-live="polite">—— / ——</span>
+          <span id="folder-name" class="folder-name">No folder</span>
+        </div>
+
+        <div class="controls__transport" role="group" aria-label="Transport">
+          <button id="prev" class="iconbtn" title="Previous · ←" aria-label="Previous">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 8 12l10 6V6Z" fill="currentColor"/><rect x="5" y="6" width="2" height="12" rx="1" fill="currentColor"/></svg>
+          </button>
+          <button id="play" class="iconbtn iconbtn--play" title="Play / Pause · Space" aria-label="Play">
+            <svg class="i-play" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.5v13l11-6.5L8 5.5Z" fill="currentColor"/></svg>
+            <svg class="i-pause" viewBox="0 0 24 24" aria-hidden="true"><rect x="6.5" y="5.5" width="4" height="13" rx="1.2" fill="currentColor"/><rect x="13.5" y="5.5" width="4" height="13" rx="1.2" fill="currentColor"/></svg>
+          </button>
+          <button id="next" class="iconbtn" title="Next · →" aria-label="Next">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l10 6L6 18V6Z" fill="currentColor"/><rect x="17" y="6" width="2" height="12" rx="1" fill="currentColor"/></svg>
+          </button>
+        </div>
+
+        <div class="controls__actions" role="group" aria-label="Options">
+          <button id="shuffle" class="iconbtn" title="Shuffle" aria-label="Shuffle">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 4h4v4M4 20l16-16M16 20h4v-4M4 4l5 5m6 6 5 5"/></svg>
+          </button>
+          <button id="settings-btn" class="iconbtn" title="Settings · S" aria-label="Settings" aria-haspopup="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M5 7h9M5 12h14M5 17h6"/><circle cx="17" cy="7" r="2.2"/><circle cx="14" cy="17" r="2.2"/></svg>
+          </button>
+          <button id="help-btn" class="iconbtn" title="Keyboard shortcuts · ?" aria-label="Keyboard shortcuts" aria-haspopup="dialog">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9.2 9a2.8 2.8 0 1 1 4 2.6c-.9.5-1.7 1-1.7 2.1"/><circle cx="11.7" cy="17.2" r="0.4" fill="currentColor" stroke-width="1.4"/><circle cx="12" cy="12" r="9"/></svg>
+          </button>
+          <button id="fullscreen" class="iconbtn" title="Fullscreen · F" aria-label="Fullscreen">
+            <svg class="i-expand" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>
+            <svg class="i-collapse" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5"/></svg>
+          </button>
+        </div>
+      </div>
+    </footer>
+
+    <!-- ── Settings drawer ─────────────────────────────────────────── -->
+    <div id="drawer-scrim" class="drawer-scrim" hidden></div>
+    <aside id="panel" class="panel" aria-label="Settings" aria-hidden="true">
+      <header class="panel__head">
+        <h2>Settings</h2>
+        <button id="panel-toggle" class="iconbtn" title="Close · Esc" aria-label="Close settings">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg>
+        </button>
       </header>
 
-      <section class="row">
-        <button id="pick-folder" class="primary">Choose folder…</button>
-        <input id="pick-fallback" type="file" webkitdirectory multiple accept="image/*" hidden />
-        <span id="folder-name" class="muted">No folder chosen</span>
-      </section>
+      <div class="panel__body">
+        <div class="field">
+          <button id="pick-folder" class="btn btn--primary btn--block">Choose folder…</button>
+          <input id="pick-fallback" type="file" webkitdirectory multiple accept="image/*" hidden />
+        </div>
 
-      <section class="row">
-        <label class="inline-toggle">
-          <input type="checkbox" id="shuffle-on-load" />
-          Shuffle on load
-        </label>
-      </section>
-
-      <section class="row">
-        <label>Transition
+        <div class="field">
+          <label class="lbl" for="transition">Transition</label>
           <select id="transition">
             <option value="fadeZoom" selected>Fade with Zoom</option>
             <option value="kenBurns">Ken Burns</option>
             <option value="vintage">Vintage Prints</option>
           </select>
-        </label>
-        <label>Dwell (s)
-          <input id="dwell" type="number" min="2" max="60" step="0.5" value="10" />
-        </label>
-        <label>Transition (s)
-          <input id="tdur" type="number" min="0.5" max="10" step="0.1" value="1.5" />
-        </label>
-      </section>
+        </div>
 
-      <section class="row">
-        <button id="play">▶︎ Play</button>
-        <button id="prev">‹ Prev</button>
-        <button id="next">Next ›</button>
-        <button id="shuffle">Shuffle</button>
-        <button id="fullscreen">⛶ Fullscreen</button>
-      </section>
+        <div class="field field--split">
+          <div>
+            <label class="lbl" for="dwell">Dwell · s</label>
+            <input id="dwell" type="number" min="2" max="60" step="0.5" value="10" />
+          </div>
+          <div>
+            <label class="lbl" for="tdur">Fade · s</label>
+            <input id="tdur" type="number" min="0.5" max="10" step="0.1" value="1.5" />
+          </div>
+        </div>
 
-      <section id="list-wrap">
-        <div class="muted small"><span id="list-count">No images</span> · Click to jump · Shuffle to reorder</div>
-        <div id="list" class="vlist"><div id="list-spacer" class="vlist-spacer"></div></div>
-      </section>
+        <div class="field field--toggles">
+          <label class="toggle"><input type="checkbox" id="shuffle-on-load" /><span>Shuffle on load</span></label>
+          <label class="toggle"><input type="checkbox" id="auto-hide" checked /><span>Auto-hide controls</span></label>
+        </div>
 
-      <footer class="muted small">
-        Keys: <kbd>Space</kbd> play/pause · <kbd>←</kbd>/<kbd>→</kbd> nav · <kbd>F</kbd> fullscreen · <kbd>P</kbd> panel
-      </footer>
+        <div class="field field--list">
+          <div class="list-head">
+            <span id="list-count">No images</span>
+            <span class="muted small">click to jump</span>
+          </div>
+          <div id="list" class="vlist"><div id="list-spacer" class="vlist-spacer"></div></div>
+        </div>
+      </div>
     </aside>
 
-    <button id="panel-show" title="Show panel (P)" hidden>≡</button>
+    <!-- ── Help overlay ────────────────────────────────────────────── -->
+    <div id="help" class="help" hidden role="dialog" aria-modal="true" aria-label="Keyboard shortcuts">
+      <div class="help__card">
+        <header class="help__head">
+          <h2>Shortcuts</h2>
+          <button id="help-close" class="iconbtn" title="Close · Esc" aria-label="Close">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg>
+          </button>
+        </header>
+        <dl class="help__grid">
+          <div><dt><kbd>Space</kbd></dt><dd>Play / pause</dd></div>
+          <div><dt><kbd>←</kbd> <kbd>→</kbd></dt><dd>Previous / next</dd></div>
+          <div><dt><kbd>F</kbd></dt><dd>Fullscreen</dd></div>
+          <div><dt><kbd>S</kbd></dt><dd>Settings</dd></div>
+          <div><dt><kbd>?</kbd></dt><dd>This help</dd></div>
+          <div><dt><kbd>Esc</kbd></dt><dd>Close · exit fullscreen</dd></div>
+        </dl>
+      </div>
+    </div>
 
     <script type="module" src="/src/main.ts"></script>
   </body>

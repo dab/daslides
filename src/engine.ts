@@ -12,6 +12,7 @@ import { VERTEX } from './transitions/shared.ts';
 import { VintageScene } from './scenes/vintageScene.ts';
 import { createWakeLock, type WakeLockHandle } from './wakeLock.ts';
 import { getImageBlob } from './imageLoader.ts';
+import { rndRange as randInRange } from './util.ts';
 import type { ImageEntry } from './folder.ts';
 
 interface LoadedSlide {
@@ -30,8 +31,6 @@ interface LoadedSlide {
    */
   fadeMag: number;
 }
-
-const randInRange = (a: number, b: number) => a + Math.random() * (b - a);
 
 /**
  * Compose a randomized Ken-Burns start/end keyframe for one slide.
@@ -121,18 +120,23 @@ export class Engine {
   private wakeLock: WakeLockHandle = createWakeLock();
 
   /**
-   * Pause tracking. When paused we stop Pixi's ticker entirely (no rAF, no
-   * render, ~0 % GPU). On resume we shift all animation timestamps forward
-   * by the paused duration so drift/camera don't visibly jump.
+   * Pausable animation clock. All animation timestamps (slideStart, transStart,
+   * and the vintage scene's card birth/fade times) live in *clock* time, not
+   * raw performance.now(). The clock advances only while not paused, so pausing
+   * is simply "stop the clock" and resuming is "keep going" — no timestamp
+   * patching, no drift. `clock()` reads it; `freezeClock()` / `unfreezeClock()`
+   * toggle it.
    */
-  private pauseStartedAt = 0;
+  private pausedAccum = 0;     // total ms the clock has spent frozen
+  private pauseMark = 0;       // performance.now() at freeze; 0 while running
+  private slideStart = 0;      // clock time the current slide began
+  private transStart = 0;      // clock time the current transition began
   /**
-   * Set when navigation (next/prev/jump) is invoked while paused — the
-   * ticker resumes for the transition, then the tick loop stops it again.
+   * Timer that advances to the next slide during a *static* dwell (Fade with
+   * Zoom shows a pixel-identical frame for the whole dwell, so we stop the
+   * renderer and wake only to start the next transition). 0 = none pending.
    */
-  private restartPauseAfterTransition = false;
-  private slideStart = 0;
-  private transStart = 0;
+  private dwellTimer = 0;
 
   onSlideChange?: (index: number) => void;
   onPlayingChange?: (playing: boolean) => void;
@@ -169,7 +173,14 @@ export class Engine {
     this.setTransition('fadeZoom');
 
     this.app.ticker.add(() => this.tick());
-    window.addEventListener('resize', () => this.handleResize());
+    // Single source of truth for sizing — Pixi's renderer emits 'resize' after
+    // it has updated `screen`, so we never read stale dimensions (the old
+    // window listener could fire before Pixi reflowed).
+    this.app.renderer.on('resize', () => this.handleResize());
+
+    // Nothing loaded yet — settle into the idle state (ticker stopped, one
+    // frame on screen) instead of rendering an empty canvas every vsync.
+    this.sync();
   }
 
   // ─── rendering setup ──────────────────────────────────────────────────────
@@ -188,12 +199,10 @@ export class Engine {
       uProgress: { value: 0, type: 'f32' },
       uDwellA: { value: 0, type: 'f32' },
       uDwellB: { value: 0, type: 'f32' },
-      uTime: { value: 0, type: 'f32' },
       uPanZoomA: { value: new Float32Array([0, 0, 0, 0]), type: 'vec4<f32>' },
       uPanZoomB: { value: new Float32Array([0, 0, 0, 0]), type: 'vec4<f32>' },
       uZoomA: { value: new Float32Array([1, 1]), type: 'vec2<f32>' },
       uZoomB: { value: new Float32Array([1, 1]), type: 'vec2<f32>' },
-      uKB: { value: 0, type: 'f32' },
       /** Per-slide Cross-Zoom magnitudes — x=A, y=B. Used by fadeZoom shader. */
       uFadeMag: { value: new Float32Array([0.1, 0.1]), type: 'vec2<f32>' },
     });
@@ -227,6 +236,9 @@ void main(){ fragColor = vec4(0.0); }`;
     this.mesh.scale.set(w, h);
     this.uniforms.uniforms.uScreenAspect = w / Math.max(1, h);
     this.vintageScene?.resize(w, h);
+    // When the ticker is stopped (paused / static dwell) nothing would redraw
+    // the resized frame — paint it once so the canvas tracks the window.
+    if (!this.app.ticker.started) this.renderOnce();
   }
 
   // ─── mode + transition ────────────────────────────────────────────────────
@@ -246,6 +258,7 @@ void main(){ fragColor = vec4(0.0); }`;
   setTransition(id: TransitionId) {
     const def = TRANSITIONS[id];
     this.currentTransition = def;
+    this.inTransition = false;
 
     if (def.kind === 'shader') {
       const newShader = this.makeShader(def.fragment);
@@ -254,12 +267,27 @@ void main(){ fragColor = vec4(0.0); }`;
       if (oldRes.uTexA) newRes.uTexA = oldRes.uTexA;
       if (oldRes.uTexB) newRes.uTexB = oldRes.uTexB;
       (this.mesh as any).shader = newShader;
-      this.uniforms.uniforms.uKB = def.kenBurns ? 1 : 0;
 
       this.mesh.visible = true;
       if (this.vintageScene) {
         this.vintageScene.root.visible = false;
         this.vintageScene.reset();
+      }
+
+      // Re-bind the current slide. Coming back from Vintage (scene) mode the
+      // mesh samplers may have been evicted to white, so without this we'd
+      // flash a blank/stale frame until the next auto-advance.
+      const entry = this.items[this.cursor];
+      if (entry) {
+        this.loadSlide(entry).then(slide => {
+          if (this.items[this.cursor] !== entry || this.currentTransition.kind !== 'shader') return;
+          this.bind('A', slide);
+          this.bind('B', slide);
+          this.uniforms.uniforms.uProgress = 0;
+          this.uniforms.uniforms.uDwellA = 0;
+          this.slideStart = this.clock();
+          this.sync();
+        }).catch(() => {});
       }
     } else {
       // scene
@@ -282,14 +310,17 @@ void main(){ fragColor = vec4(0.0); }`;
             },
             this.tDurSec,
             this.dwellSec,
+            this.clock(),
           );
-          this.slideStart = performance.now();
+          this.slideStart = this.clock();
+          this.sync();
         })();
       }
     }
+    this.sync();
   }
 
-  setDwell(sec: number) { this.dwellSec = Math.max(1, sec); }
+  setDwell(sec: number) { this.dwellSec = Math.max(1, sec); this.sync(); }
   setTDur(sec: number)  { this.tDurSec  = Math.max(0.2, sec); }
 
   // ─── items / cache ────────────────────────────────────────────────────────
@@ -306,6 +337,8 @@ void main(){ fragColor = vec4(0.0); }`;
     const r = this.mesh.shader!.resources as any;
     r.uTexA = this.fallbackTex.source;
     r.uTexB = this.fallbackTex.source;
+    this.inTransition = false;
+    this.clearDwell();
     if (this.vintageScene) this.vintageScene.reset();
 
     const newSet = new Set(items);
@@ -330,57 +363,89 @@ void main(){ fragColor = vec4(0.0); }`;
   }
 
   setPlaying(p: boolean) {
-    const wasPlaying = this.playing;
-    if (p === wasPlaying) return;
+    if (p === this.playing) return;
     this.playing = p;
-
-    if (p) {
-      // Resume: shift every animation timestamp forward by the paused duration,
-      // then restart the ticker. Drift, camera, dwell — none of them notice
-      // that time was suspended.
-      if (this.pauseStartedAt > 0) {
-        const delta = performance.now() - this.pauseStartedAt;
-        this.shiftAllTimestamps(delta);
-        this.pauseStartedAt = 0;
-      }
-      this.app.ticker.start();
-      void this.wakeLock.acquire();
-    } else {
-      // Pause: stop the ticker entirely so the renderer does no work.
-      // Note slideStart already reflects the just-completed pause window,
-      // so when we resume we just shift it (see above).
-      this.pauseStartedAt = performance.now();
-      this.app.ticker.stop();
-      void this.wakeLock.release();
-    }
+    if (p) void this.wakeLock.acquire();
+    else void this.wakeLock.release();
+    this.sync();
     this.onPlayingChange?.(p);
   }
   togglePlay() { this.setPlaying(!this.playing); }
 
-  /** Shift all animation timestamps to compensate for pause duration. */
-  private shiftAllTimestamps(deltaMs: number) {
-    this.slideStart += deltaMs;
-    this.transStart += deltaMs;
-    this.vintageScene?.shiftTime(deltaMs);
+  // ─── clock + run-state ──────────────────────────────────────────────────────
+
+  /** Current animation-clock time (ms). Frozen while paused. */
+  private clock(): number {
+    return (this.pauseMark || performance.now()) - this.pausedAccum;
+  }
+  private freezeClock() {
+    if (!this.pauseMark) this.pauseMark = performance.now();
+  }
+  private unfreezeClock() {
+    if (this.pauseMark) {
+      this.pausedAccum += performance.now() - this.pauseMark;
+      this.pauseMark = 0;
+    }
   }
 
-  /** One-shot render — used when paused and we need to display a new state. */
-  private renderOnce() {
-    this.app.renderer.render({ container: this.app.stage });
+  /** True for transitions that animate continuously *during* the dwell. */
+  private get continuousMotion(): boolean {
+    const def = this.currentTransition;
+    return def.kind === 'scene' || (def.kind === 'shader' && def.kenBurns);
   }
 
   /**
-   * Called from tick when a transition finishes. If navigation happened
-   * while paused, we resumed the ticker just to animate the transition —
-   * now that it's done, render one final frame and stop the ticker again.
+   * Reconcile renderer + clock + dwell-timer with the current state. The one
+   * place that decides whether we render every frame, run a static dwell, or
+   * sit fully paused:
+   *
+   *   - transition in flight, or playing with continuous motion → render every
+   *     frame (ticker on, clock running).
+   *   - playing but the frame is static (Fade with Zoom mid-dwell) → stop the
+   *     renderer, keep the clock running, and arm a timer for the next slide.
+   *   - paused → freeze the clock, stop the renderer, hold the last frame.
    */
-  private maybeRePauseAfterTransition() {
-    if (!this.restartPauseAfterTransition) return;
-    this.restartPauseAfterTransition = false;
-    // Render the settled frame, then stop. Re-pausing the clock isn't needed
-    // (pauseStartedAt was kept fresh in navigateTo).
+  private sync() {
+    this.clearDwell();
+    const animate = this.inTransition || (this.playing && this.continuousMotion);
+
+    if (animate) {
+      this.unfreezeClock();
+      if (!this.app.ticker.started) this.app.ticker.start();
+      return;
+    }
+
+    if (this.app.ticker.started) this.app.ticker.stop();
+
+    if (this.playing) {
+      this.unfreezeClock();
+      this.scheduleDwell();
+    } else {
+      this.freezeClock();
+    }
     this.renderOnce();
-    this.app.ticker.stop();
+  }
+
+  /** Arm the static-dwell timer to advance after the remaining dwell elapses. */
+  private scheduleDwell() {
+    if (this.items.length === 0) return;
+    const elapsed = (this.clock() - this.slideStart) / 1000;
+    const remaining = Math.max(0, this.dwellSec - elapsed) * 1000;
+    this.dwellTimer = window.setTimeout(() => {
+      this.dwellTimer = 0;
+      if (!this.playing) return;
+      const next = this.findLoadable(this.cursor, 1);
+      if (next === null) { this.setPlaying(false); return; }
+      this.beginTransition(next).catch(() => {});
+    }, remaining);
+  }
+  private clearDwell() {
+    if (this.dwellTimer) { clearTimeout(this.dwellTimer); this.dwellTimer = 0; }
+  }
+
+  /** One-shot render — used whenever the ticker is stopped but state changed. */
+  private renderOnce() {
+    this.app.renderer.render({ container: this.app.stage });
   }
 
   next() { this.advance(+1); }
@@ -419,22 +484,13 @@ void main(){ fragColor = vec4(0.0); }`;
   }
 
   /**
-   * Start a transition to `index`. If the slideshow is paused we briefly
-   * resume the ticker so the transition can animate, then re-pause once it
-   * completes (handled in the tick loop via `restartPauseAfterTransition`).
+   * Start a transition to `index`. Works the same paused or playing:
+   * `beginTransition` sets `inTransition` and calls `sync()`, which starts the
+   * ticker (and unfreezes the clock) for the duration of the animation; when
+   * the transition settles, `sync()` returns us to the prior paused/static
+   * state automatically.
    */
   private navigateTo(index: number) {
-    if (!this.playing) {
-      this.restartPauseAfterTransition = true;
-      // Resume ticker without changing the `playing` flag — that flag controls
-      // dwell-based auto-advance, which we don't want while "paused".
-      if (this.pauseStartedAt > 0) {
-        const delta = performance.now() - this.pauseStartedAt;
-        this.shiftAllTimestamps(delta);
-        this.pauseStartedAt = performance.now(); // freeze the clock again right away
-      }
-      this.app.ticker.start();
-    }
     this.beginTransition(index).catch(() => {});
   }
 
@@ -563,8 +619,8 @@ void main(){ fragColor = vec4(0.0); }`;
     if (this.items[this.cursor] !== entry) return;
 
     if (this.currentTransition.kind === 'shader') {
-      this.bindA(slide);
-      this.bindB(slide);
+      this.bind('A', slide);
+      this.bind('B', slide);
       this.uniforms.uniforms.uProgress = 0;
       this.uniforms.uniforms.uDwellA = 0;
     } else {
@@ -577,34 +633,37 @@ void main(){ fragColor = vec4(0.0); }`;
         },
         this.tDurSec,
         this.dwellSec,
+        this.clock(),
       );
     }
-    this.slideStart = performance.now();
+    this.slideStart = this.clock();
     this.inTransition = false;
     this.onSlideChange?.(this.cursor);
     this.preloadWindow();
+    this.sync();
   }
 
-  private bindA(slide: LoadedSlide) {
+  /** Bind a loaded slide to shader sampler A or B with its motion params. */
+  private bind(which: 'A' | 'B', slide: LoadedSlide) {
     const r = this.mesh.shader!.resources as any;
-    r.uTexA = slide.texture.source;
-    this.uniforms.uniforms.uAspectA =
-      slide.texture.source.pixelWidth / Math.max(1, slide.texture.source.pixelHeight);
+    const u = this.uniforms.uniforms;
+    const src = slide.texture.source;
+    const aspect = src.pixelWidth / Math.max(1, src.pixelHeight);
     const pz = slide.panZoom;
-    (this.uniforms.uniforms.uPanZoomA as Float32Array).set([pz.pan0[0], pz.pan0[1], pz.pan1[0], pz.pan1[1]]);
-    (this.uniforms.uniforms.uZoomA as Float32Array).set([pz.z0, pz.z1]);
-    (this.uniforms.uniforms.uFadeMag as Float32Array)[0] = slide.fadeMag;
-  }
-
-  private bindB(slide: LoadedSlide) {
-    const r = this.mesh.shader!.resources as any;
-    r.uTexB = slide.texture.source;
-    this.uniforms.uniforms.uAspectB =
-      slide.texture.source.pixelWidth / Math.max(1, slide.texture.source.pixelHeight);
-    const pz = slide.panZoom;
-    (this.uniforms.uniforms.uPanZoomB as Float32Array).set([pz.pan0[0], pz.pan0[1], pz.pan1[0], pz.pan1[1]]);
-    (this.uniforms.uniforms.uZoomB as Float32Array).set([pz.z0, pz.z1]);
-    (this.uniforms.uniforms.uFadeMag as Float32Array)[1] = slide.fadeMag;
+    const panZoom = [pz.pan0[0], pz.pan0[1], pz.pan1[0], pz.pan1[1]];
+    if (which === 'A') {
+      r.uTexA = src;
+      u.uAspectA = aspect;
+      (u.uPanZoomA as Float32Array).set(panZoom);
+      (u.uZoomA as Float32Array).set([pz.z0, pz.z1]);
+      (u.uFadeMag as Float32Array)[0] = slide.fadeMag;
+    } else {
+      r.uTexB = src;
+      u.uAspectB = aspect;
+      (u.uPanZoomB as Float32Array).set(panZoom);
+      (u.uZoomB as Float32Array).set([pz.z0, pz.z1]);
+      (u.uFadeMag as Float32Array)[1] = slide.fadeMag;
+    }
   }
 
   private async beginTransition(toIndex: number): Promise<void> {
@@ -621,13 +680,19 @@ void main(){ fragColor = vec4(0.0); }`;
     }
     if (this.items[toIndex] !== entry) return;
 
+    // Set cursor BEFORE history lookup so historySlides() walks back from the
+    // incoming slide, not the outgoing one. Flip inTransition + sync() so the
+    // ticker runs (and the clock is unfrozen) for the animation even if we're
+    // paused — sync() returns us to the prior state once the transition ends.
+    this.cursor = toIndex;
+    this.inTransition = true;
+    this.sync();
+    this.transStart = this.clock();
+
     if (this.currentTransition.kind === 'shader') {
-      this.bindB(incoming);
+      this.bind('B', incoming);
       this.uniforms.uniforms.uDwellB = 0;
     } else {
-      // Set cursor BEFORE history lookup so historySlides() walks back from
-      // the incoming slide, not the outgoing one.
-      this.cursor = toIndex;
       const history = await this.historySlides(3);
       if (this.items[toIndex] !== entry) return;
       this.ensureVintageScene().addPhoto(
@@ -637,11 +702,9 @@ void main(){ fragColor = vec4(0.0); }`;
         },
         this.tDurSec,
         this.dwellSec,
+        this.transStart,
       );
     }
-    this.transStart = performance.now();
-    this.inTransition = true;
-    if (this.currentTransition.kind === 'shader') this.cursor = toIndex;
     this.preloadWindow();
     this.onSlideChange?.(this.cursor);
   }
@@ -649,17 +712,16 @@ void main(){ fragColor = vec4(0.0); }`;
   // ─── per-frame ────────────────────────────────────────────────────────────
 
   private tick() {
-    const now = performance.now();
-    this.uniforms.uniforms.uTime = now / 1000;
+    const now = this.clock();
     if (this.items.length === 0) return;
 
     if (this.currentTransition.kind === 'scene') {
-      this.vintageScene?.tick();
+      this.vintageScene?.tick(now);
       // Settle inTransition once the addPhoto animation has finished
       if (this.inTransition && now - this.transStart >= this.tDurSec * 1000) {
         this.inTransition = false;
         this.slideStart = now;
-        this.maybeRePauseAfterTransition();
+        this.sync();
       }
       if (!this.inTransition && this.playing) {
         if ((now - this.slideStart) / 1000 >= this.dwellSec) {
@@ -694,7 +756,7 @@ void main(){ fragColor = vec4(0.0); }`;
         this.uniforms.uniforms.uDwellA = newDwellA;
         this.slideStart = now - newDwellA * this.dwellSec * 1000;
         this.inTransition = false;
-        this.maybeRePauseAfterTransition();
+        this.sync();
       }
     } else if (this.playing) {
       const elapsed = (now - this.slideStart) / 1000;
