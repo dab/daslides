@@ -3,6 +3,7 @@ node_modules/
 
 # Build artefacts
 dist/
+tsconfig.tsbuildinfo
 
 # Vite cache
 .vite/
