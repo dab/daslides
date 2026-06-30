@@ -220,9 +220,13 @@ export class UI {
 
     this.setupPwa();
 
-    // Activity wakes the controls.
+    // Activity wakes the controls. pointerdown/touchstart are essential on
+    // touch devices (no mousemove) — without them the controls can never be
+    // re-shown once the idle timer hides them.
     window.addEventListener('mousemove', () => this.wake(), { passive: true });
     window.addEventListener('keydown', () => this.wake(), { passive: true });
+    window.addEventListener('pointerdown', () => this.wake(), { passive: true });
+    window.addEventListener('touchstart', () => this.wake(), { passive: true });
     this.panel.addEventListener('mouseenter', () => this.wake());
     this.panel.addEventListener('focusin', () => this.wake());
     this.autoHideBox.addEventListener('change', () => this.wake());

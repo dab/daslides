@@ -35,9 +35,16 @@
 }
 
 * { box-sizing: border-box; }
-html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg); overflow: hidden; }
+html, body { margin: 0; height: 100%; min-height: 100dvh; background: var(--bg); color: var(--fg); overflow: hidden; }
 
-#stage { position: fixed; inset: 0; background: #000; }
+/* Size by the dynamic viewport (NOT inset:0) so the installed iOS standalone app
+   fills the whole screen incl. safe areas — inset:0 leaves a dark band there. */
+#stage {
+  position: fixed; top: 0; left: 0;
+  width: 100vw;  width: 100dvw;
+  height: 100vh; height: 100dvh;
+  background: #000;
+}
 #stage canvas { display: block; width: 100%; height: 100%; }
 
 /* Buttons that look like nothing until needed. */
@@ -135,7 +142,7 @@ label.btn, label.linkbtn { cursor: pointer; }
 body.has-folder .scrim { opacity: 1; }
 
 .controls {
-  position: fixed; left: 50%; bottom: 22px; z-index: 16;
+  position: fixed; left: 50%; bottom: calc(22px + env(safe-area-inset-bottom, 0px)); z-index: 16;
   transform: translateX(-50%);
   width: min(720px, calc(100vw - 32px));
   background: var(--glass);
@@ -213,7 +220,10 @@ body.panel-open .drawer-scrim { opacity: 1; }
 body.panel-open .drawer-scrim { pointer-events: auto; }
 
 .panel {
-  position: fixed; top: 14px; right: 14px; bottom: 14px; z-index: 20;
+  position: fixed; z-index: 20;
+  top: calc(14px + env(safe-area-inset-top, 0px));
+  right: calc(14px + env(safe-area-inset-right, 0px));
+  bottom: calc(14px + env(safe-area-inset-bottom, 0px));
   width: 350px; max-width: calc(100vw - 28px);
   display: flex; flex-direction: column;
   background: var(--glass-strong);
@@ -328,7 +338,7 @@ kbd {
 
 /* ── Toast (install / fullscreen hints) ───────────────────────────────── */
 .toast {
-  position: fixed; left: 50%; bottom: 96px; z-index: 50;
+  position: fixed; left: 50%; bottom: calc(96px + env(safe-area-inset-bottom, 0px)); z-index: 50;
   transform: translateX(-50%) translateY(8px);
   max-width: min(420px, calc(100vw - 32px));
   padding: 11px 16px; border-radius: var(--r-md);
