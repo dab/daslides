@@ -244,7 +244,10 @@ export class UI {
 
   private setPanel(open: boolean) {
     this.body.classList.toggle('panel-open', open);
-    this.panel.setAttribute('aria-hidden', open ? 'false' : 'true');
+    // `inert` (not aria-hidden) for the closed drawer: it removes the subtree
+    // from focus + assistive tech without the Chromium "aria-hidden on a focused
+    // descendant" conflict.
+    this.panel.inert = !open;
     if (open) this.wake();
   }
 

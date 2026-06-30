@@ -7,26 +7,10 @@ const stage = document.getElementById('stage') as HTMLDivElement;
 const engine = new Engine();
 let items: ImageEntry[] = [];
 
-// Never let a render-init hiccup (e.g. WebGL unavailable) take down the UI —
-// the controls must always wire up so the user can pick images.
-try {
-  await engine.init(stage);
-} catch (err) {
-  console.error('[slideshow] engine init failed:', err);
-}
-
-// Browsers persist <select> / <input> values across page reloads, so the
-// initial UI state may differ from the engine's defaults. Sync the engine to
-// what the user actually sees in the panel before any folder is loaded.
-{
-  const trSel    = document.getElementById('transition') as HTMLSelectElement;
-  const dwellInp = document.getElementById('dwell') as HTMLInputElement;
-  const tdurInp  = document.getElementById('tdur')  as HTMLInputElement;
-  engine.setTransition(trSel.value as TransitionId);
-  if (+dwellInp.value > 0) engine.setDwell(+dwellInp.value);
-  if (+tdurInp.value  > 0) engine.setTDur(+tdurInp.value);
-}
-
+// Build the UI and wire every handler FIRST — independent of the renderer. If
+// engine.init() were awaited up front and ever stalled/failed, `new UI()` would
+// never run and the controls/pickers would be dead. Decoupling guarantees the
+// UI always works.
 const ui = new UI({
   // Pickers are native <label for> elements that open the hidden file inputs —
   // no JS gesture handling needed (reliable in every browser incl. Brave/mobile).
@@ -58,14 +42,30 @@ const ui = new UI({
 engine.onSlideChange = (i) => ui.setActive(i);
 engine.onPlayingChange = (p) => ui.setPlaying(p);
 
-function loadFiles(name: string, files: ImageEntry[]) {
+// Initialize the renderer in the background. `loadFiles` awaits this before
+// driving the engine, so picking still works even if init is slow.
+const ready = (async () => {
+  console.info('[slideshow] engine init…');
+  await engine.init(stage);
+  // Browsers persist <select>/<input> values across reloads — sync the engine
+  // to what the user actually sees before any folder loads.
+  const trSel    = document.getElementById('transition') as HTMLSelectElement;
+  const dwellInp = document.getElementById('dwell') as HTMLInputElement;
+  const tdurInp  = document.getElementById('tdur')  as HTMLInputElement;
+  engine.setTransition(trSel.value as TransitionId);
+  if (+dwellInp.value > 0) engine.setDwell(+dwellInp.value);
+  if (+tdurInp.value  > 0) engine.setTDur(+tdurInp.value);
+  console.info('[slideshow] engine ready');
+})().catch((err) => console.error('[slideshow] engine init failed:', err));
+
+async function loadFiles(name: string, files: ImageEntry[]) {
+  console.info('[slideshow] files picked:', files.length, '→', name);
   if (files.length === 0) {
-    alert('No images found in the selected folder.');
+    alert('No images found in the selection.');
     return;
   }
-  // "Shuffle on load" toggle — Fisher–Yates shuffle the items array before
-  // handing it to the engine, so the slideshow doesn't always start at
-  // file #1. Browsers persist the checkbox state across reloads.
+  // "Shuffle on load" — Fisher–Yates the items so playback doesn't always start
+  // at file #1. Browsers persist the checkbox state across reloads.
   const shuffleOnLoad = (document.getElementById('shuffle-on-load') as HTMLInputElement)?.checked;
   if (shuffleOnLoad && files.length > 1) {
     for (let i = files.length - 1; i > 0; i--) {
@@ -76,6 +76,7 @@ function loadFiles(name: string, files: ImageEntry[]) {
   items = files;
   ui.setFolderName(name);
   ui.renderList(files);
+  await ready;              // ensure the renderer is initialized before driving it
   engine.setItems(files);
   ui.setActive(0);
   engine.setPlaying(true);

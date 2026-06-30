@@ -256,6 +256,7 @@ void main(){ fragColor = vec4(0.0); }`;
   }
 
   setTransition(id: TransitionId) {
+    if (!this.app) return; // not initialized yet — main re-applies after init
     const def = TRANSITIONS[id];
     this.currentTransition = def;
     this.inTransition = false;
@@ -320,7 +321,7 @@ void main(){ fragColor = vec4(0.0); }`;
     this.sync();
   }
 
-  setDwell(sec: number) { this.dwellSec = Math.max(1, sec); this.sync(); }
+  setDwell(sec: number) { this.dwellSec = Math.max(1, sec); if (this.app) this.sync(); }
   setTDur(sec: number)  { this.tDurSec  = Math.max(0.2, sec); }
 
   // ─── items / cache ────────────────────────────────────────────────────────
@@ -363,6 +364,7 @@ void main(){ fragColor = vec4(0.0); }`;
   }
 
   setPlaying(p: boolean) {
+    if (!this.app) return;
     if (p === this.playing) return;
     this.playing = p;
     if (p) void this.wakeLock.acquire();

@@ -24,9 +24,12 @@
           location.replace(location.pathname + '?r=' + Date.now());
         }
         addEventListener('error', function (e) {
+          // SCRIPT only — a 404'd JS chunk means stale HTML. NOT LINK: Brave
+          // Shields blocks the Google-Fonts stylesheet, which must not trigger a
+          // reload (it falls back to the system font stack just fine).
           var t = e.target;
-          if (t && (t.tagName === 'SCRIPT' || t.tagName === 'LINK')) recover();
-        }, true); // capture phase — catches resource (script/link) load errors
+          if (t && t.tagName === 'SCRIPT') recover();
+        }, true); // capture phase — resource load errors don't bubble
         addEventListener('unhandledrejection', function (e) {
           var m = String((e.reason && e.reason.message) || '');
           if (m.indexOf('dynamically imported module') > -1) recover();
@@ -98,7 +101,7 @@
 
     <!-- ── Settings drawer ─────────────────────────────────────────── -->
     <div id="drawer-scrim" class="drawer-scrim" hidden></div>
-    <aside id="panel" class="panel" aria-label="Settings" aria-hidden="true">
+    <aside id="panel" class="panel" aria-label="Settings" inert>
       <header class="panel__head">
         <h2>Settings</h2>
         <button id="panel-toggle" class="iconbtn" title="Close · Esc" aria-label="Close settings">
@@ -110,8 +113,6 @@
         <div class="field">
           <label for="pick-fallback" id="pick-folder" class="btn btn--primary btn--block">Choose folder…</label>
           <label for="pick-photos" id="pick-photos-btn" class="btn btn--block">Choose photos…</label>
-          <input id="pick-fallback" type="file" webkitdirectory multiple accept="image/*" class="visually-hidden" />
-          <input id="pick-photos" type="file" multiple accept="image/*" class="visually-hidden" />
         </div>
 
         <div class="field">
@@ -168,6 +169,13 @@
         </dl>
       </div>
     </div>
+
+    <!-- File inputs live at top level (NOT inside #panel, which is inert/hidden
+         when closed) so focusing them on selection never sits inside a hidden
+         subtree — Chromium blocks that and the picked files never register.
+         The <label for> elements above open them via id association. -->
+    <input id="pick-fallback" type="file" webkitdirectory multiple accept="image/*" class="visually-hidden" />
+    <input id="pick-photos" type="file" multiple accept="image/*" class="visually-hidden" />
 
     <script type="module" src="/src/main.ts"></script>
   </body>
