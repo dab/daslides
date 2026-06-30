@@ -192,11 +192,14 @@ body.has-folder .controls { opacity: 1; transform: translateX(-50%) translateY(0
 .iconbtn--play:hover { background: #fff; }
 
 /* Play/pause + expand/collapse icon swaps driven by body state */
-.i-pause, .i-collapse { display: none; }
-body.playing .iconbtn--play .i-play { display: none; }
-body.playing .iconbtn--play .i-pause { display: block; }
-body.fullscreen .iconbtn .i-expand { display: none; }
-body.fullscreen .iconbtn .i-collapse { display: block; }
+/* Qualify with `svg` so these beat `.iconbtn svg { display:block }` (0,1,1) —
+   otherwise the "off" glyph stays visible and both icons show at once. */
+.iconbtn svg.i-pause,
+.iconbtn svg.i-collapse { display: none; }
+body.playing .iconbtn--play svg.i-play { display: none; }
+body.playing .iconbtn--play svg.i-pause { display: block; }
+body.fullscreen .iconbtn svg.i-expand { display: none; }
+body.fullscreen .iconbtn svg.i-collapse { display: block; }
 
 /* ── Settings drawer ──────────────────────────────────────────────────── */
 
