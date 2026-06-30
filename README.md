@@ -1,6 +1,8 @@
-# Slideshow
+# daslides
 
-A fullscreen photo slideshow that runs in the browser. Hardware-accelerated, handles any folder size, and never crops your photos.
+A private, fullscreen photo slideshow that runs entirely in your browser — point it at a folder and play. **Nothing is uploaded; your photos never leave your device.** Hardware-accelerated, handles any folder size, never crops your photos, and reads RAW + TIFF.
+
+**Live:** https://dab.github.io/daslides/
 
 ## Run
 

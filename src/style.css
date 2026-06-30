@@ -71,10 +71,12 @@ body.has-folder .empty { opacity: 0; pointer-events: none; }
   animation: rise 0.7s var(--ease) both;
 }
 .empty__title {
-  font-size: 30px; font-weight: 600; letter-spacing: -0.02em; margin: 0;
+  font-size: 40px; font-weight: 700; letter-spacing: -0.035em; margin: 2px 0 0;
+  /* wordmark: the gold accent gives the lowercase brand a quiet identity */
+  color: var(--accent);
   animation: rise 0.7s var(--ease) 0.06s both;
 }
-.empty__sub { color: var(--muted); font-size: 15px; margin: 0 0 12px; animation: rise 0.7s var(--ease) 0.12s both; }
+.empty__sub { color: var(--muted); font-size: 15px; line-height: 1.5; margin: 4px 0 14px; animation: rise 0.7s var(--ease) 0.12s both; }
 .empty__formats {
   color: var(--muted-dim); font-family: var(--font-mono); font-size: 11px;
   letter-spacing: 0.04em; margin: 16px 0 0; animation: rise 0.7s var(--ease) 0.24s both;

@@ -3,7 +3,30 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <title>Slideshow</title>
+
+    <!-- ── SEO ──────────────────────────────────────────────────────── -->
+    <title>daslides — private, local photo slideshow (RAW-friendly)</title>
+    <meta name="description" content="daslides is a free photo slideshow that runs entirely in your browser — point it at a folder and play. Nothing is uploaded. Ken Burns, vintage prints, RAW & TIFF support." />
+    <link rel="canonical" href="https://dab.github.io/daslides/" />
+    <meta name="robots" content="index, follow" />
+    <meta name="author" content="dab" />
+
+    <!-- Open Graph -->
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="daslides" />
+    <meta property="og:title" content="daslides — private, local photo slideshow" />
+    <meta property="og:description" content="A free, fullscreen photo slideshow that runs entirely in your browser. Your photos never leave your device. Ken Burns, vintage prints, RAW & TIFF." />
+    <meta property="og:url" content="https://dab.github.io/daslides/" />
+    <meta property="og:image" content="https://dab.github.io/daslides/og.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="daslides — a private, local photo slideshow" />
+
+    <!-- Twitter -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="daslides — private, local photo slideshow" />
+    <meta name="twitter:description" content="A free, fullscreen photo slideshow that runs entirely in your browser. Your photos never leave your device." />
+    <meta name="twitter:image" content="https://dab.github.io/daslides/og.png" />
 
     <!-- Installable PWA. iPhone has no Fullscreen API for elements, so the
          immersive/fullscreen experience there is "Add to Home Screen" (standalone). -->
@@ -14,7 +37,7 @@
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-    <meta name="apple-mobile-web-app-title" content="Slideshow" />
+    <meta name="apple-mobile-web-app-title" content="daslides" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -48,6 +71,22 @@
         addEventListener('load', function () { sessionStorage.removeItem(KEY); });
       })();
     </script>
+
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "WebApplication",
+        "name": "daslides",
+        "url": "https://dab.github.io/daslides/",
+        "description": "A free, private photo slideshow that runs entirely in your browser. Point it at a folder of photos and play — nothing is uploaded. Supports RAW & TIFF, Ken Burns and vintage-print transitions.",
+        "applicationCategory": "MultimediaApplication",
+        "operatingSystem": "Any (web browser with WebGL2)",
+        "browserRequirements": "Requires WebGL2",
+        "image": "https://dab.github.io/daslides/icon-512.png",
+        "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+        "author": { "@type": "Person", "name": "dab" }
+      }
+    </script>
   </head>
   <body>
     <div id="stage"></div>
@@ -60,8 +99,8 @@
           <path d="M24 3v21M44 33 24 24M33 44 24 24M4 33l20-9M15 4l9 20" stroke="currentColor" stroke-width="1.5" />
           <circle cx="24" cy="24" r="5.5" fill="currentColor" />
         </svg>
-        <h1 class="empty__title">Slideshow</h1>
-        <p class="empty__sub">Point it at a folder of photographs.</p>
+        <h1 class="empty__title">daslides</h1>
+        <p class="empty__sub">A private, local photo slideshow.<br />Point it at a folder — your photos never leave your device.</p>
         <label for="pick-fallback" id="empty-folder" class="btn btn--primary">Choose folder…</label>
         <label for="pick-photos" id="empty-photos" class="linkbtn">or select photos</label>
         <p class="empty__formats">JPEG · PNG · HEIC · WebP · AVIF · RAW · TIFF</p>

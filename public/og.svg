@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+  <defs>
+    <radialGradient id="glow" cx="50%" cy="34%" r="60%">
+      <stop offset="0%" stop-color="#e8c07d" stop-opacity="0.16"/>
+      <stop offset="60%" stop-color="#e8c07d" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="1200" height="630" fill="#0a0a0b"/>
+  <rect width="1200" height="630" fill="url(#glow)"/>
+
+  <!-- aperture mark -->
+  <g transform="translate(600,196) scale(3.1) translate(-24,-24)"
+     fill="none" stroke="#e8c07d" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="24" cy="24" r="21"/>
+    <path d="M24 3v21M44 33 24 24M33 44 24 24M4 33l20-9M15 4l9 20"/>
+    <circle cx="24" cy="24" r="5.5" fill="#e8c07d" stroke="none"/>
+  </g>
+
+  <text x="600" y="385" text-anchor="middle" fill="#e8c07d"
+        font-family="'Helvetica Neue', Arial, sans-serif" font-weight="700"
+        font-size="104" letter-spacing="-4">daslides</text>
+  <text x="600" y="448" text-anchor="middle" fill="#cfcabf"
+        font-family="'Helvetica Neue', Arial, sans-serif" font-weight="400"
+        font-size="34">A private, local photo slideshow</text>
+  <text x="600" y="500" text-anchor="middle" fill="#8e8a80"
+        font-family="'Helvetica Neue', Arial, sans-serif" font-weight="400"
+        font-size="24" letter-spacing="1">Your photos never leave your device · RAW &amp; TIFF</text>
+</svg>

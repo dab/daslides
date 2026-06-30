@@ -1,7 +1,7 @@
 {
-  "name": "Slideshow",
-  "short_name": "Slideshow",
-  "description": "A photo slideshow for your own folders.",
+  "name": "daslides",
+  "short_name": "daslides",
+  "description": "A private, local photo slideshow for your own folders — nothing is uploaded.",
   "start_url": ".",
   "scope": ".",
   "display": "standalone",
