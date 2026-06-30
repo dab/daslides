@@ -1,14 +1,20 @@
 /**
- * Folder picking + image enumeration.
- * Uses File System Access API where available, falls back to <input webkitdirectory>.
+ * Image enumeration from a picked FileList.
+ *
+ * Picking is done with native `<input>` elements opened by `<label for>` (see
+ * index.html): `webkitdirectory` for desktop folder selection, plain `multiple`
+ * for universal/mobile photo selection. The native label avoids the
+ * user-gesture and File System Access API pitfalls (Brave blocks the FSA picker;
+ * `showDirectoryPicker` after an `await` loses the gesture). `entriesFromFileList`
+ * turns either selection into `ImageEntry[]`.
  */
 
 export interface ImageEntry {
   /** Display name (basename) */
   name: string;
-  /** Path relative to the chosen folder root */
+  /** Path relative to the chosen folder root (or just the filename) */
   path: string;
-  /** Lazily resolved File handle source: either a FileSystemFileHandle or a direct File */
+  /** Lazily resolved File (read on demand, never eagerly) */
   getFile: () => Promise<File>;
 }
 
@@ -22,67 +28,12 @@ const isImage = (name: string, type?: string) =>
 const naturalSort = (a: string, b: string) =>
   a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' });
 
-/** True if the modern picker is usable. */
-export const hasDirectoryPicker = () =>
-  typeof (window as any).showDirectoryPicker === 'function';
-
-/**
- * Brave exposes `showDirectoryPicker` but blocks the call (File System Access
- * API disabled by default), so the picker silently fails. Detect Brave and skip
- * FSA entirely — the `<input webkitdirectory>` fallback works there.
- */
-export async function isBrave(): Promise<boolean> {
-  try {
-    const b = (navigator as any).brave;
-    return !!(b && typeof b.isBrave === 'function' && (await b.isBrave()));
-  } catch {
-    return false;
-  }
-}
-
 /**
  * Touch-primary device (phone/tablet). `webkitdirectory` doesn't work on mobile,
  * so the UI leads with the multi-file photo picker instead of "Choose folder".
  */
 export const isTouchPrimary = (): boolean =>
   matchMedia('(pointer: coarse)').matches && !matchMedia('(pointer: fine)').matches;
-
-/** Open the directory picker. Returns { name, files }. */
-export async function pickDirectory(): Promise<{ name: string; files: ImageEntry[] }> {
-  if (hasDirectoryPicker()) {
-    const dir = await (window as any).showDirectoryPicker({
-      mode: 'read',
-      startIn: 'pictures',
-      id: 'slideshow-folder',
-    });
-    const files = await collectFromHandle(dir, '');
-    files.sort((a, b) => naturalSort(a.path, b.path));
-    return { name: dir.name, files };
-  }
-  throw new Error('No directory picker; use the file input fallback.');
-}
-
-async function collectFromHandle(
-  dir: any,
-  prefix: string,
-): Promise<ImageEntry[]> {
-  const out: ImageEntry[] = [];
-  for await (const entry of dir.values()) {
-    if (entry.kind === 'file') {
-      if (!isImage(entry.name)) continue;
-      const path = prefix ? `${prefix}/${entry.name}` : entry.name;
-      out.push({
-        name: entry.name,
-        path,
-        getFile: () => entry.getFile(),
-      });
-    } else if (entry.kind === 'directory') {
-      const sub = await collectFromHandle(entry, prefix ? `${prefix}/${entry.name}` : entry.name);
-      out.push(...sub);
-    }
-  }
-  return out;
-}
 
 /**
  * Fallback: turn a FileList into ImageEntries. Handles both a directory

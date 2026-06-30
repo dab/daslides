@@ -1,19 +1,19 @@
 import { Engine } from './engine.ts';
 import { UI } from './ui.ts';
-import {
-  pickDirectory,
-  entriesFromFileList,
-  hasDirectoryPicker,
-  isBrave,
-  type ImageEntry,
-} from './folder.ts';
+import { entriesFromFileList, type ImageEntry } from './folder.ts';
 import type { TransitionId } from './transitions/index.ts';
 
 const stage = document.getElementById('stage') as HTMLDivElement;
 const engine = new Engine();
 let items: ImageEntry[] = [];
 
-await engine.init(stage);
+// Never let a render-init hiccup (e.g. WebGL unavailable) take down the UI —
+// the controls must always wire up so the user can pick images.
+try {
+  await engine.init(stage);
+} catch (err) {
+  console.error('[slideshow] engine init failed:', err);
+}
 
 // Browsers persist <select> / <input> values across page reloads, so the
 // initial UI state may differ from the engine's defaults. Sync the engine to
@@ -28,25 +28,8 @@ await engine.init(stage);
 }
 
 const ui = new UI({
-  onPickFolder: async () => {
-    // Chrome/Edge: native File System Access picker. Brave exposes the API but
-    // blocks the call, so skip FSA there and use the <input webkitdirectory>
-    // fallback (which works on Brave, Firefox, and Safari desktop).
-    if (hasDirectoryPicker() && !(await isBrave())) {
-      try {
-        const { name, files } = await pickDirectory();
-        loadFiles(name, files);
-        return;
-      } catch (err: any) {
-        if (err?.name === 'AbortError') return; // user cancelled — done
-        console.warn('[slideshow] directory picker failed, using fallback:', err);
-      }
-    }
-    (document.getElementById('pick-fallback') as HTMLInputElement).click();
-  },
-  onPickPhotos: () => {
-    (document.getElementById('pick-photos') as HTMLInputElement).click();
-  },
+  // Pickers are native <label for> elements that open the hidden file inputs —
+  // no JS gesture handling needed (reliable in every browser incl. Brave/mobile).
   onFilesPicked: (list) => {
     const { name, files } = entriesFromFileList(list, 'Selected photos');
     loadFiles(name, files);

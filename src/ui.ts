@@ -1,8 +1,6 @@
 import { isTouchPrimary, type ImageEntry } from './folder.ts';
 
 export interface UIBindings {
-  onPickFolder: () => void;
-  onPickPhotos: () => void;
   onFilesPicked: (list: FileList) => void;
   onPlayToggle: () => void;
   onPrev: () => void;
@@ -135,10 +133,7 @@ export class UI {
   private drawerScrim = $<HTMLElement>('drawer-scrim');
   private help = $<HTMLElement>('help');
 
-  private pickBtn = $<HTMLButtonElement>('pick-folder');
-  private pickEmptyBtn = $<HTMLButtonElement>('pick-empty');
-  private pickPhotosBtn = $<HTMLButtonElement>('pick-photos-btn');
-  private pickPhotosEmpty = $<HTMLButtonElement>('pick-photos-empty');
+  private emptyPhotos = $<HTMLLabelElement>('empty-photos');
   private fallback = $<HTMLInputElement>('pick-fallback');
   private photosInput = $<HTMLInputElement>('pick-photos');
   private folderName = $<HTMLSpanElement>('folder-name');
@@ -175,17 +170,13 @@ export class UI {
 
     this.dwellSec = +this.dwellInp.value > 0 ? +this.dwellInp.value : 10;
 
-    // On touch devices `webkitdirectory` (folder picking) doesn't work — lead
-    // with the universal multi-file photo picker instead.
+    // On touch devices `webkitdirectory` (folder picking) doesn't work — CSS
+    // hides the folder label, so promote the photo label to the primary action.
     const touch = isTouchPrimary();
     this.body.classList.toggle('touch', touch);
-    if (touch) this.pickEmptyBtn.textContent = 'Choose photos…';
+    if (touch) this.emptyPhotos.textContent = 'Choose photos…';
 
-    this.pickBtn.addEventListener('click', () => b.onPickFolder());
-    this.pickPhotosBtn.addEventListener('click', () => b.onPickPhotos());
-    this.pickEmptyBtn.addEventListener('click', () => (touch ? b.onPickPhotos() : b.onPickFolder()));
-    this.pickPhotosEmpty.addEventListener('click', () => b.onPickPhotos());
-
+    // Pickers are native <label for> → file input; we only react to the result.
     const onChange = (input: HTMLInputElement) => () => {
       if (input.files && input.files.length) b.onFilesPicked(input.files);
     };
