@@ -82,6 +82,12 @@ body.has-folder .empty { opacity: 0; pointer-events: none; }
   letter-spacing: 0.04em; margin: 16px 0 0; animation: rise 0.7s var(--ease) 0.24s both;
 }
 .empty .btn--primary { animation: rise 0.7s var(--ease) 0.18s both; }
+.empty__credit {
+  color: var(--muted-dim); font-size: 12px; margin: 4px 0 0;
+  animation: rise 0.7s var(--ease) 0.3s both;
+}
+.empty__credit a { color: var(--muted); text-decoration: none; border-bottom: 1px solid var(--hairline); }
+.empty__credit a:hover { color: var(--accent); border-color: var(--accent); }
 
 @keyframes rise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
 
