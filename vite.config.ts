@@ -4,6 +4,6 @@ import { defineConfig } from 'vite';
 // base accordingly so built asset URLs resolve. Local dev stays at root.
 export default defineConfig(({ command }) => ({
   base: command === 'build' ? '/daslides/' : '/',
-  server: { host: true, port: 5173 },
+  server: { port: 5173 },
   build: { target: 'es2022' },
 }));

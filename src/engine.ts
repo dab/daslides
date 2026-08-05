@@ -114,6 +114,7 @@ export class Engine {
 
   private playing = false;
   private inTransition = false;
+  private navToken = 0;
   private dwellSec = 10;
   private tDurSec = 1.5;
   /** Holds the display awake while playback runs. */
@@ -236,6 +237,10 @@ void main(){ fragColor = vec4(0.0); }`;
     this.mesh.scale.set(w, h);
     this.uniforms.uniforms.uScreenAspect = w / Math.max(1, h);
     this.vintageScene?.resize(w, h);
+    if (this.vintageScene?.needsReseed && this.currentTransition.kind === 'scene') {
+      this.vintageScene.needsReseed = false;
+      this.reseedScene();
+    }
     // When the ticker is stopped (paused / static dwell) nothing would redraw
     // the resized frame — paint it once so the canvas tracks the window.
     if (!this.app.ticker.started) this.renderOnce();
@@ -260,6 +265,7 @@ void main(){ fragColor = vec4(0.0); }`;
     const def = TRANSITIONS[id];
     this.currentTransition = def;
     this.inTransition = false;
+    const myToken = ++this.navToken;
 
     if (def.kind === 'shader') {
       const newShader = this.makeShader(def.fragment);
@@ -281,7 +287,7 @@ void main(){ fragColor = vec4(0.0); }`;
       const entry = this.items[this.cursor];
       if (entry) {
         this.loadSlide(entry).then(slide => {
-          if (this.items[this.cursor] !== entry || this.currentTransition.kind !== 'shader') return;
+          if (this.navToken !== myToken) return;
           this.bind('A', slide);
           this.bind('B', slide);
           this.uniforms.uniforms.uProgress = 0;
@@ -296,29 +302,32 @@ void main(){ fragColor = vec4(0.0); }`;
       scene.root.visible = true;
       scene.reset();
       this.mesh.visible = false;
-
-      // Seed the scene with the current slide if we have one
-      const entry = this.items[this.cursor];
-      if (entry) {
-        (async () => {
-          const focal = await this.loadSlide(entry);
-          if (this.items[this.cursor] !== entry || this.currentTransition.kind !== 'scene') return;
-          const history = await this.historySlides(3);
-          scene.addPhoto(
-            {
-              focal: { texture: focal.texture, entry: focal.entry },
-              history: history.map(s => ({ texture: s.texture, entry: s.entry })),
-            },
-            this.tDurSec,
-            this.dwellSec,
-            this.clock(),
-          );
-          this.slideStart = this.clock();
-          this.sync();
-        })();
-      }
+      this.reseedScene();
     }
     this.sync();
+  }
+
+  private reseedScene() {
+    const entry = this.items[this.cursor];
+    if (!entry) return;
+    const myToken = ++this.navToken;
+    (async () => {
+      const focal = await this.loadSlide(entry);
+      if (this.navToken !== myToken) return;
+      const history = await this.historySlides(3);
+      if (this.navToken !== myToken) return;
+      this.ensureVintageScene().addPhoto(
+        {
+          focal: { texture: focal.texture, entry: focal.entry },
+          history: history.map(s => ({ texture: s.texture, entry: s.entry })),
+        },
+        this.tDurSec,
+        this.dwellSec,
+        this.clock(),
+      );
+      this.slideStart = this.clock();
+      this.sync();
+    })();
   }
 
   setDwell(sec: number) { this.dwellSec = Math.max(1, sec); if (this.app) this.sync(); }
@@ -346,7 +355,7 @@ void main(){ fragColor = vec4(0.0); }`;
     for (const [k, p] of this.cache) {
       if (!newSet.has(k)) {
         this.cache.delete(k);
-        p.then(s => this.releaseSlide(s));
+        p.then(s => this.releaseSlide(s)).catch(() => {});
       }
     }
     this.items = items.slice();
@@ -432,7 +441,7 @@ void main(){ fragColor = vec4(0.0); }`;
   private scheduleDwell() {
     if (this.items.length === 0) return;
     const elapsed = (this.clock() - this.slideStart) / 1000;
-    const remaining = Math.max(0, this.dwellSec - elapsed) * 1000;
+    const remaining = Math.max(0, this.dwellSec + this.tDurSec - elapsed) * 1000;
     this.dwellTimer = window.setTimeout(() => {
       this.dwellTimer = 0;
       if (!this.playing) return;
@@ -517,7 +526,7 @@ void main(){ fragColor = vec4(0.0); }`;
       for (const [k, p] of this.cache) {
         if (!keep.has(k)) {
           this.cache.delete(k);
-          p.then(s => this.releaseSlide(s));
+          p.then(s => this.releaseSlide(s)).catch(() => {});
           if (this.cache.size <= this.maxCache) break;
         }
       }
@@ -553,15 +562,12 @@ void main(){ fragColor = vec4(0.0); }`;
     }
     if (this.cache.has(entry)) return this.cache.get(entry)!;
     const p = (async (): Promise<LoadedSlide> => {
+      let url: string | undefined;
       try {
         const file = await entry.getFile();
-        // RAW / TIFF → embedded JPEG preview; everything else → raw File.
-        // null means "no extractable preview and the browser can't decode it"
-        // (e.g. a RAW with corrupt EXIF) — give up early instead of trying
-        // an upload that will only fail downstream.
         const blob = await getImageBlob(file);
         if (!blob) throw new Error(`no preview extractable for ${entry.path}`);
-        const url = URL.createObjectURL(blob);
+        url = URL.createObjectURL(blob);
         const texture = await Assets.load<Texture>({ src: url, parser: 'loadTextures' });
         const aspect = texture.width / Math.max(1, texture.height);
         const screen = this.app.renderer.screen;
@@ -572,7 +578,7 @@ void main(){ fragColor = vec4(0.0); }`;
           fadeMag: randInRange(0.08, 0.14),
         };
       } catch (err) {
-        // Permanently mark this entry as bad so we don't loop on it.
+        if (url) URL.revokeObjectURL(url);
         this.failed.add(entry);
         this.cache.delete(entry);
         console.warn('[slideshow] failed to load (skipping):', entry.path, err);
@@ -602,6 +608,7 @@ void main(){ fragColor = vec4(0.0); }`;
 
   private async startSlide(): Promise<void> {
     if (this.items.length === 0) return;
+    const myToken = ++this.navToken;
     // Skip past a failed cursor (e.g. first item is corrupt)
     if (this.failed.has(this.items[this.cursor])) {
       const next = this.findLoadable(this.cursor, 1);
@@ -618,7 +625,7 @@ void main(){ fragColor = vec4(0.0); }`;
       this.cursor = next;
       return this.startSlide();
     }
-    if (this.items[this.cursor] !== entry) return;
+    if (this.navToken !== myToken) return;
 
     if (this.currentTransition.kind === 'shader') {
       this.bind('A', slide);
@@ -627,7 +634,7 @@ void main(){ fragColor = vec4(0.0); }`;
       this.uniforms.uniforms.uDwellA = 0;
     } else {
       const history = await this.historySlides(3);
-      if (this.items[this.cursor] !== entry) return; // changed mid-await
+      if (this.navToken !== myToken) return;
       this.ensureVintageScene().addPhoto(
         {
           focal: { texture: slide.texture, entry: slide.entry },
@@ -669,6 +676,7 @@ void main(){ fragColor = vec4(0.0); }`;
   }
 
   private async beginTransition(toIndex: number): Promise<void> {
+    const myToken = ++this.navToken;
     const entry = this.items[toIndex];
     let incoming: LoadedSlide;
     try { incoming = await this.loadSlide(entry); }
@@ -676,11 +684,10 @@ void main(){ fragColor = vec4(0.0); }`;
       // Newly-discovered bad file. Jump past it.
       const skipTo = this.findLoadable(toIndex, 1);
       if (skipTo === null) { this.setPlaying(false); return; }
-      // Avoid infinite recursion on weird circular failure
       if (skipTo === toIndex) return;
       return this.beginTransition(skipTo);
     }
-    if (this.items[toIndex] !== entry) return;
+    if (this.navToken !== myToken) return;
 
     // Set cursor BEFORE history lookup so historySlides() walks back from the
     // incoming slide, not the outgoing one. Flip inTransition + sync() so the
@@ -696,7 +703,7 @@ void main(){ fragColor = vec4(0.0); }`;
       this.uniforms.uniforms.uDwellB = 0;
     } else {
       const history = await this.historySlides(3);
-      if (this.items[toIndex] !== entry) return;
+      if (this.navToken !== myToken) return;
       this.ensureVintageScene().addPhoto(
         {
           focal: { texture: incoming.texture, entry: incoming.entry },
@@ -763,7 +770,7 @@ void main(){ fragColor = vec4(0.0); }`;
     } else if (this.playing) {
       const elapsed = (now - this.slideStart) / 1000;
       this.uniforms.uniforms.uDwellA = Math.min(1.0, elapsed / this.dwellSec);
-      if (elapsed >= this.dwellSec) {
+      if (elapsed >= this.dwellSec + this.tDurSec) {
         const next = this.findLoadable(this.cursor, 1);
         if (next === null) { this.setPlaying(false); return; }
         this.beginTransition(next).catch(() => {});

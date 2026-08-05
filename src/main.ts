@@ -6,6 +6,7 @@ import type { TransitionId } from './transitions/index.ts';
 const stage = document.getElementById('stage') as HTMLDivElement;
 const engine = new Engine();
 let items: ImageEntry[] = [];
+let initFailed = false;
 
 // Build the UI and wire every handler FIRST — independent of the renderer. If
 // engine.init() were awaited up front and ever stalled/failed, `new UI()` would
@@ -61,7 +62,16 @@ const ready = (async () => {
   if (+dwellInp.value > 0) engine.setDwell(+dwellInp.value);
   if (+tdurInp.value  > 0) engine.setTDur(+tdurInp.value);
   console.info('[slideshow] engine ready');
-})().catch((err) => console.error('[slideshow] engine init failed:', err));
+})().catch((err) => {
+  initFailed = true;
+  console.error('[slideshow] engine init failed:', err);
+  const sub = document.querySelector('.empty__sub');
+  if (sub) sub.textContent = 'This browser does not support WebGL2, which is required for daslides.';
+  for (const id of ['empty-folder', 'empty-photos']) {
+    const el = document.getElementById(id);
+    if (el) el.style.display = 'none';
+  }
+});
 
 async function loadFiles(name: string, files: ImageEntry[]) {
   console.info('[slideshow] files picked:', files.length, '→', name);
@@ -81,7 +91,8 @@ async function loadFiles(name: string, files: ImageEntry[]) {
   items = files;
   ui.setFolderName(name);
   ui.renderList(files);
-  await ready;              // ensure the renderer is initialized before driving it
+  await ready;
+  if (initFailed) return;
   engine.setItems(files);
   ui.setActive(0);
   engine.setPlaying(true);

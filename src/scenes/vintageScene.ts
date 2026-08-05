@@ -118,13 +118,16 @@ export class VintageScene {
     this.root.addChild(this.cardsLayer);
   }
 
+  needsReseed = false;
+
   resize(w: number, h: number) {
+    if (w === this.screenW && h === this.screenH) return;
     this.screenW = w;
     this.screenH = h;
-    // Pivot the whole cards layer at screen center so camera rotation/zoom
-    // happens around the visual center of the pile, not the canvas origin.
     this.cardsLayer.pivot.set(w / 2, h / 2);
     this.cardsLayer.position.set(w / 2, h / 2);
+    this.reset();
+    this.needsReseed = true;
   }
 
   /** Entries currently referenced by any live card. */
