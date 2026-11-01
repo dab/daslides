@@ -163,6 +163,24 @@ textureSource is null` from the batcher.
   uniform across the whole draw call — no divergence — and skips a full
   (potentially blur-hitting) sample on every dwell frame.
 
+## Perf overlay
+
+`src/perf.ts` is a dev-only overlay, inert unless the URL carries `?perf=1`
+(every entry point returns early; nothing mounts, no timers run). No keybinding
+— `space`, arrows, `f`, `s` and `?` are already taken by `ui.ts`.
+
+The number to watch is **IN-TRANS**: the worst frame *inside* the last
+transition. A stall at a transition boundary is exactly what "it hangs before
+switching" looks like, and an average frame time hides it completely. Frame cost
+is the interval between engine ticks, not a timed render call, so a dropped frame
+registers whatever caused it (GPU upload, layout flush, main-thread decode).
+`perfTransition(true)` resets the interval baseline because the ticker may have
+been stopped for an entire static dwell, and that gap is not a dropped frame.
+
+Expect `upload` to be well under a millisecond and to appear during dwells, never
+at a transition. If it starts showing up on transition frames, the staged upload
+queue has been broken.
+
 ## UI
 
 `src/ui.ts` contains a small `VirtualList` — Map<index, row> of currently-rendered rows, absolute-positioned by `index × rowHeight`. Recycle on scroll, debounced via `requestAnimationFrame`. `setActive` is O(1). No external virtualization library.

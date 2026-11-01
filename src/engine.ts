@@ -14,6 +14,7 @@ import { VintageScene } from './scenes/vintageScene.ts';
 import { createWakeLock, type WakeLockHandle } from './wakeLock.ts';
 import { decodeToBitmap, getImageBlob } from './imageLoader.ts';
 import { rndRange as randInRange } from './util.ts';
+import { perfFrame, perfMark, perfStats, perfTransition } from './perf.ts';
 import type { ImageEntry } from './folder.ts';
 
 interface LoadedSlide {
@@ -201,6 +202,19 @@ export class Engine {
     // it has updated `screen`, so we never read stale dimensions (the old
     // window listener could fire before Pixi reflowed).
     this.app.renderer.on('resize', () => this.handleResize());
+
+    // Dev-only overlay; a no-op unless the URL has ?perf=1.
+    perfStats(() => {
+      const caps = this.textureCaps();
+      return {
+        slides: `${this.cache.size} resident, ${this.uploadQueue.length} queued upload`,
+        texmem: `${(this.residentBytes / 1048576).toFixed(1)} MB / `
+              + `${(this.maxTextureBytes / 1048576).toFixed(0)} MB`,
+        screen: `${this.app.renderer.screen.width}x${this.app.renderer.screen.height}`
+              + ` @${this.app.renderer.resolution}x -> cap ${caps.capW}x${caps.capH}`,
+        mode: `${this.currentTransition.id}  dwell ${this.dwellSec}s  fade ${this.tDurSec}s`,
+      };
+    });
 
     // Nothing loaded yet — settle into the idle state (ticker stopped, one
     // frame on screen) instead of rendering an empty canvas every vsync.
@@ -728,7 +742,12 @@ void main(){ fragColor = vec4(0.0); }`;
       if (!this.inTransition) {
         let source = this.uploadQueue.shift();
         while (source && source.destroyed) source = this.uploadQueue.shift();
-        if (source) this.app.renderer.texture.initSource(source);
+        if (source) {
+          const t0 = performance.now();
+          this.app.renderer.texture.initSource(source);
+          perfMark('upload', performance.now() - t0,
+            `${source.pixelWidth}x${source.pixelHeight}`);
+        }
       }
       if (this.uploadQueue.length) this.scheduleUpload();
     });
@@ -746,7 +765,9 @@ void main(){ fragColor = vec4(0.0); }`;
         const blob = await getImageBlob(file);
         if (!blob) throw new Error(`no preview extractable for ${entry.path}`);
         const { capW, capH } = this.textureCaps();
+        const t0 = performance.now();
         bitmap = await decodeToBitmap(blob, capW, capH);
+        perfMark('decode', performance.now() - t0, `${bitmap.width}x${bitmap.height}`);
         const source = new ImageSource({
           resource: bitmap,
           // The bitmap is already premultiplied (decodeToBitmap asks for it),
@@ -930,6 +951,7 @@ void main(){ fragColor = vec4(0.0); }`;
       // unfrozen) for the animation even if we're paused — sync() returns us to
       // the prior state once the transition ends.
       this.inTransition = true;
+      perfTransition(true);
       this.sync();
       this.transStart = this.clock();
 
@@ -957,6 +979,7 @@ void main(){ fragColor = vec4(0.0); }`;
   // ─── per-frame ────────────────────────────────────────────────────────────
 
   private tick() {
+    perfFrame(performance.now());
     const now = this.clock();
     if (this.items.length === 0) return;
 
@@ -966,6 +989,7 @@ void main(){ fragColor = vec4(0.0); }`;
       if (this.inTransition && now - this.transStart >= this.tDurSec * 1000) {
         this.inTransition = false;
         this.slideStart = now;
+        perfTransition(false);
         this.sync();
       }
       if (!this.inTransition && this.playing) {
@@ -1003,6 +1027,7 @@ void main(){ fragColor = vec4(0.0); }`;
         this.uniforms.uniforms.uDwellA = this.uniforms.uniforms.uDwellB;
         this.slideStart = this.transStart;
         this.inTransition = false;
+        perfTransition(false);
         this.sync();
       }
     } else if (this.playing) {
