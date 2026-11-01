@@ -1,101 +1,144 @@
 /**
- * Resolve a folder ImageEntry to a Blob the browser can render natively.
+ * Resolve a picked file to something the browser can actually draw.
  *
- *  - For ordinary web formats (JPEG / PNG / WebP / AVIF / GIF / BMP / HEIC):
- *    return the File as-is. The browser decodes it.
+ *  - Ordinary web formats (JPEG / PNG / WebP / AVIF / GIF / BMP / HEIC) are
+ *    handed over untouched; the browser decodes them.
  *
- *  - For RAW (CR2, CR3, ARW, NEF, RAF, RW2, ORF, DNG) and TIFF:
- *    extract the embedded JPEG preview via exifr. Modern cameras embed a
- *    full-sized JPEG inside the RAW for in-camera review — that's exactly
- *    what we want for slideshow display. Pixel-accurate RAW decoding would
- *    require a 3–5 MB WASM build (LibRaw etc.); embedded previews give us
- *    ~99 % of the visual fidelity at a fraction of the cost (and decode time).
+ *  - RAW and TIFF go to a worker that pulls out the embedded JPEG preview.
+ *    See rawPreview.worker.ts for why that is the right trade-off and how the
+ *    preview is located and validated.
  *
- *  - If no preview is extractable, return `null`. We refuse to hand the raw
- *    RAW bytes to the browser — no browser can decode CR2/ARW/NEF natively
- *    and a failed texture upload is far more expensive than a clean skip.
- *    For .tif/.tiff we DO fall through to the raw file because Safari can
- *    decode baseline TIFFs.
- *
- * exifr is loaded dynamically — keeps the initial bundle small for users
- * who never throw a RAW at the app.
+ *  - Files with no usable preview return a null blob, and the engine skips
+ *    them. We would rather skip than display a 160x120 thumbnail stretched
+ *    across a 4K screen.
  */
+
+import type { RawPreview } from './rawPreview.worker.ts';
 
 const RAW_EXT  = /\.(cr[23]|nef|arw|raf|rw2|orf|dng|tiff?)$/i;
 const TIFF_EXT = /\.tiff?$/i;
 
-export async function getImageBlob(file: File): Promise<Blob | null> {
-  if (!RAW_EXT.test(file.name)) return file;
+export interface ResolvedImage {
+  blob: Blob | null;
+  /**
+   * EXIF orientation 1-8. For RAW this comes from the parent file, because an
+   * extracted preview carries no Exif of its own — so unlike a normal JPEG the
+   * browser cannot apply it for us.
+   */
+  orientation: number;
+}
 
-  // RAW / TIFF — try embedded JPEG preview
-  try {
-    const exifr = await import('exifr');
+// ─── worker plumbing ────────────────────────────────────────────────────────
 
-    // 1. Full-size preview tags (CR2 IFD2, ARW PreviewImage, NEF PreviewIFD, …)
-    //    exifr surfaces these via the `pick` option; results are Uint8Arrays.
-    const meta = await (exifr as any).parse(file, {
-      pick: ['PreviewImage', 'JpgFromRaw', 'OtherImage', 'ThumbnailImage'],
-      translateValues: false,
-      mergeOutput: true,
-    }) as Record<string, unknown> | undefined;
+let worker: Worker | null = null;
+let nextId = 1;
+const pending = new Map<number, (r: RawPreview) => void>();
 
-    if (meta) {
-      for (const k of ['PreviewImage', 'JpgFromRaw', 'OtherImage', 'ThumbnailImage']) {
-        const v = meta[k];
-        if (v instanceof Uint8Array && v.byteLength > 16_000) {
-          // Heuristic: >16 KB is a real preview, not a 160×120 EXIF thumbnail
-          return new Blob([v as BlobPart], { type: 'image/jpeg' });
-        }
-      }
+/**
+ * One worker, created on first RAW. Messages queue naturally, which also stops
+ * the engine's 5-7 parallel preloads from all parsing at once.
+ */
+function getWorker(): Worker {
+  if (worker) return worker;
+  worker = new Worker(new URL('./rawPreview.worker.ts', import.meta.url), {
+    type: 'module',
+  });
+  worker.onmessage = (
+    e: MessageEvent<{ id: number; result?: RawPreview; error?: string }>,
+  ) => {
+    const done = pending.get(e.data.id);
+    if (!done) return;
+    pending.delete(e.data.id);
+    if (e.data.error) {
+      console.warn('[slideshow] preview extraction failed:', e.data.error);
+      done({ blob: null, orientation: 1, width: 0, height: 0 });
+    } else {
+      done(e.data.result!);
     }
+  };
+  return worker;
+}
 
-    // 2. Fall back to the EXIF thumbnail (small, ~160×120 on many cameras)
-    const thumb = await (exifr as any).thumbnail(file);
-    if (thumb instanceof Uint8Array && thumb.byteLength > 0) {
-      return new Blob([thumb as BlobPart], { type: 'image/jpeg' });
-    }
-  } catch (err) {
-    // Common case: corrupt file or a CR2 variant exifr can't walk
-    // ("offset is outside the bounds of the DataView"). Warned once per file
-    // by the engine's failure tracker.
+function extractPreview(file: File): Promise<RawPreview> {
+  return new Promise((resolve) => {
+    const id = nextId++;
+    pending.set(id, resolve);
+    getWorker().postMessage({ id, file });
+  });
+}
+
+// ─── public API ─────────────────────────────────────────────────────────────
+
+export async function getImageBlob(file: File): Promise<ResolvedImage> {
+  if (!RAW_EXT.test(file.name)) return { blob: file, orientation: 1 };
+
+  const preview = await extractPreview(file);
+  if (preview.blob) return { blob: preview.blob, orientation: preview.orientation };
+
+  // Baseline TIFFs are decodable directly by some browsers (Safari), so it's
+  // worth handing the file over rather than giving up.
+  if (TIFF_EXT.test(file.name)) return { blob: file, orientation: preview.orientation };
+
+  return { blob: null, orientation: 1 };
+}
+
+// ─── decode ─────────────────────────────────────────────────────────────────
+
+/**
+ * Rotate/flip a bitmap to match its EXIF orientation. Only needed for RAW
+ * previews, which have no Exif for the browser to honour.
+ */
+async function applyOrientation(src: ImageBitmap, orientation: number): Promise<ImageBitmap> {
+  const swap = orientation >= 5;
+  const w = swap ? src.height : src.width;
+  const h = swap ? src.width : src.height;
+  const canvas = new OffscreenCanvas(w, h);
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return src;
+  const sw = src.width, sh = src.height;
+  switch (orientation) {
+    case 2: ctx.transform(-1, 0, 0, 1, sw, 0); break;
+    case 3: ctx.transform(-1, 0, 0, -1, sw, sh); break;
+    case 4: ctx.transform(1, 0, 0, -1, 0, sh); break;
+    case 5: ctx.transform(0, 1, 1, 0, 0, 0); break;
+    case 6: ctx.transform(0, 1, -1, 0, sh, 0); break;
+    case 7: ctx.transform(0, -1, -1, 0, sh, sw); break;
+    case 8: ctx.transform(0, -1, 1, 0, 0, sw); break;
+    default: return src;
   }
-
-  // 3. TIFF: hand to the browser (Safari decodes baseline TIFFs)
-  if (TIFF_EXT.test(file.name)) return file;
-
-  // 4. RAW with no extractable preview — refuse. The engine marks the file
-  //    as permanently failed and skips it.
-  return null;
+  ctx.drawImage(src, 0, 0);
+  src.close();
+  return canvas.transferToImageBitmap();
 }
 
 /**
  * Decode a Blob to an ImageBitmap no larger than (capW, capH) device pixels.
  *
- * Why downscale at all: Pixi's loader uploads photos at native resolution, so a
- * 24 MP file becomes a ~96 MB GPU texture that is then minified into a ~1920 px
- * quad with a single bilinear tap — which both wastes VRAM (14 cached slides
- * could reach ~1.3 GB) and shimmers on fine detail while panning.
+ * Why downscale: a 24 MP file would otherwise become a ~96 MB GPU texture that
+ * is then minified into a ~1920 px quad with a single bilinear tap — wasting
+ * VRAM and shimmering on fine detail while panning.
  *
- * The cap is applied PER AXIS, not to the long edge. Cover fit requires both
- * axes to meet their cap, so this keeps panoramas wide and tall photos tall;
- * capping the long edge alone would under-resolve a 3:1 panorama.
+ * The cap is applied PER AXIS, not to the long edge. Cover fit needs both axes
+ * to meet their cap, so this keeps panoramas wide and tall photos tall; capping
+ * the long edge alone would under-resolve a 3:1 panorama.
  *
  * No zoom headroom: at the tightest Ken Burns keyframe the photo is magnified by
  * at most 1.30, which trilinear filtering makes imperceptible.
- *
- * Decode-then-resize (rather than probing the file header for dimensions and
- * decoding straight to size) is deliberate: it is a few lines, works for every
- * format the browser can decode, and the full-resolution bitmap is transient.
- * `createImageBitmap` decodes off the main thread, so doing this ourselves
- * instead of going through Pixi's worker costs nothing — that worker existed
- * mainly to move a `fetch` off-thread, and we already hold the Blob.
  */
 export async function decodeToBitmap(
   blob: Blob,
   capW: number,
   capH: number,
+  orientation = 1,
 ): Promise<ImageBitmap> {
-  const full = await createImageBitmap(blob, { premultiplyAlpha: 'premultiply' });
+  // `from-image` is pinned rather than left to the default, which changed from
+  // "ignore EXIF" to "apply it" partway through this API's life.
+  let full = await createImageBitmap(blob, {
+    premultiplyAlpha: 'premultiply',
+    imageOrientation: 'from-image',
+  });
+  if (orientation > 1) full = await applyOrientation(full, orientation);
+
   const k = Math.min(1, Math.max(capW / full.width, capH / full.height));
   if (k >= 1) return full;
 
@@ -109,8 +152,8 @@ export async function decodeToBitmap(
       premultiplyAlpha: 'premultiply',
     });
     // Some engines accept resize options and ignore them without erroring.
-    // Verify rather than trust; a full-resolution texture is a quality/memory
-    // regression, not a correctness one, so falling back is fine.
+    // Verify rather than trust; falling back costs quality and memory, not
+    // correctness.
     if (small.width !== w) { small.close(); return full; }
     full.close();
     return small;

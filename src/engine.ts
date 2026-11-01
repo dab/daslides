@@ -774,11 +774,11 @@ void main(){ fragColor = vec4(0.0); }`;
       let bitmap: ImageBitmap | undefined;
       try {
         const file = await entry.getFile();
-        const blob = await getImageBlob(file);
-        if (!blob) throw new Error(`no preview extractable for ${entry.path}`);
+        const { blob, orientation } = await getImageBlob(file);
+        if (!blob) throw new Error(`no usable preview in ${entry.path}`);
         const { capW, capH } = this.textureCaps();
         const t0 = performance.now();
-        bitmap = await decodeToBitmap(blob, capW, capH);
+        bitmap = await decodeToBitmap(blob, capW, capH, orientation);
         perfMark('decode', performance.now() - t0, `${bitmap.width}x${bitmap.height}`);
         const source = new ImageSource({
           resource: bitmap,
