@@ -18,22 +18,38 @@ export interface ImageEntry {
   getFile: () => Promise<File>;
 }
 
-// Web-native + RAW/TIFF (the latter decoded via embedded JPEG preview)
+// Web-native + RAW/TIFF (the latter decoded via embedded JPEG preview).
+// This list is authoritative: we used to accept anything with an `image/*` MIME
+// type, which let in SVG (createImageBitmap can't decode it), ICO (a 32px icon
+// shown fullscreen) and — worst — the `._NAME.ARW` AppleDouble sidecars macOS
+// writes onto FAT camera cards. Those match the extension of the real file, so a
+// 500-photo card reported 1,000 images, half of them unreadable 4 KB stubs that
+// shuffle would happily land on.
 const IMG_EXT = /\.(jpe?g|png|webp|avif|heic|heif|gif|bmp|tiff?|cr[23]|nef|arw|raf|rw2|orf|dng)$/i;
-const IMG_MIME = /^image\//;
 
-const isImage = (name: string, type?: string) =>
-  (type && IMG_MIME.test(type)) || IMG_EXT.test(name);
+const isImage = (name: string) => !name.startsWith('.') && IMG_EXT.test(name);
 
-const naturalSort = (a: string, b: string) =>
-  a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' });
+// One collator, reused. `localeCompare` with an options object builds a new one
+// on every call, which on a 20k-photo folder is a multi-second freeze inside the
+// input's change handler.
+const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
+const naturalSort = (a: string, b: string) => collator.compare(a, b);
 
 /**
  * Touch-primary device (phone/tablet). `webkitdirectory` doesn't work on mobile,
  * so the UI leads with the multi-file photo picker instead of "Choose folder".
  */
 export const isTouchPrimary = (): boolean =>
-  matchMedia('(pointer: coarse)').matches && !matchMedia('(pointer: fine)').matches;
+  (matchMedia('(pointer: coarse)').matches && !matchMedia('(pointer: fine)').matches) ||
+  // An iPad with a Magic Keyboard or a mouse reports a fine pointer, but
+  // webkitdirectory still doesn't work there — so it must not be offered the
+  // folder picker as its primary action.
+  isIOS();
+
+/** iPhone/iPad, including iPadOS which reports itself as a Mac. */
+export const isIOS = (): boolean =>
+  /iphone|ipad|ipod/i.test(navigator.userAgent) ||
+  (navigator.maxTouchPoints > 1 && /Macintosh/.test(navigator.userAgent));
 
 /**
  * Fallback: turn a FileList into ImageEntries. Handles both a directory
@@ -48,7 +64,7 @@ export function entriesFromFileList(
   const files: ImageEntry[] = [];
   let root = '';
   for (const f of Array.from(list)) {
-    if (!isImage(f.name, f.type)) continue;
+    if (!isImage(f.name)) continue;
     const rel = (f as any).webkitRelativePath as string | undefined;
     const path = rel || f.name;
     if (!root && rel) root = rel.split('/')[0];

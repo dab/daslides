@@ -1,4 +1,4 @@
-import { isTouchPrimary, type ImageEntry } from './folder.ts';
+import { isIOS, isTouchPrimary, type ImageEntry } from './folder.ts';
 
 export interface UIBindings {
   onFilesPicked: (list: FileList) => void;
@@ -204,9 +204,7 @@ export class UI {
   private tDurSec = 1.5;
   /** Slide-progress bar, driven imperatively so restarts never force layout. */
   private progressAnim: Animation | null = null;
-  private isIOS =
-    /iphone|ipad|ipod/i.test(navigator.userAgent) ||
-    (navigator.maxTouchPoints > 1 && /Macintosh/.test(navigator.userAgent));
+  private isIOS = isIOS();
 
   constructor(private b: UIBindings) {
     this.vlist = new VirtualList($('list'), $('list-spacer'), (i) => {
@@ -226,6 +224,11 @@ export class UI {
     // Pickers are native <label for> → file input; we only react to the result.
     const onChange = (input: HTMLInputElement) => () => {
       if (input.files && input.files.length) b.onFilesPicked(input.files);
+      // Clear both, so re-picking the same folder still fires `change` (a
+      // natural thing to try when you want to restart) and neither input keeps
+      // thousands of File handles alive.
+      this.fallback.value = '';
+      this.photosInput.value = '';
     };
     this.fallback.addEventListener('change', onChange(this.fallback));
     this.photosInput.addEventListener('change', onChange(this.photosInput));

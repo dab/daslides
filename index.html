@@ -231,8 +231,8 @@
          when closed) so focusing them on selection never sits inside a hidden
          subtree — Chromium blocks that and the picked files never register.
          The <label for> elements above open them via id association. -->
-    <input id="pick-fallback" type="file" webkitdirectory multiple accept="image/*" class="visually-hidden" />
-    <input id="pick-photos" type="file" multiple accept="image/*" class="visually-hidden" />
+    <input id="pick-fallback" type="file" webkitdirectory multiple accept="image/*,.jpg,.jpeg,.png,.webp,.avif,.heic,.heif,.gif,.bmp,.tif,.tiff,.cr2,.cr3,.nef,.arw,.raf,.rw2,.orf,.dng" class="visually-hidden" />
+    <input id="pick-photos" type="file" multiple accept="image/*,.jpg,.jpeg,.png,.webp,.avif,.heic,.heif,.gif,.bmp,.tif,.tiff,.cr2,.cr3,.nef,.arw,.raf,.rw2,.orf,.dng" class="visually-hidden" />
 
     <script type="module" src="/src/main.ts"></script>
   </body>
