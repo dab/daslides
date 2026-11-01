@@ -1,7 +1,6 @@
 import {
-  BlurFilter,
   Container,
-  Graphics,
+  NineSliceSprite,
   Sprite,
   Texture,
 } from 'pixi.js';
@@ -33,9 +32,6 @@ import { TAU, lerp, ease, rand, rndRange as rrange } from '../util.ts';
 
 interface PrintCard {
   container: Container;
-  shadow: Graphics;
-  paper: Graphics;
-  sprite: Sprite;
   entry: ImageEntry;
 
   /** Anchor pose — drift orbits around these. */
@@ -96,6 +92,50 @@ interface Camera {
 }
 
 const BG_SLOTS = 3; // number of background prints behind focal
+
+/**
+ * Shared drop-shadow texture, nine-sliced onto every card.
+ *
+ * Previously each card blurred its own shadow rectangle and the whole card was
+ * baked with cacheAsTexture(). That cost a power-of-two render target per card
+ * (4096x2048 = 33 MB on a 2x display, up to eight at once) and then threw the
+ * blur away: the cache is sized from local bounds, which do not include filter
+ * padding, so the penumbra was clipped to a hard-edged band.
+ *
+ * A Gaussian blur of an axis-aligned rectangle decomposes exactly into nine
+ * slices — the edges are one-dimensional profiles that are constant along their
+ * length, and the corners are those profiles multiplied together — so one small
+ * texture reproduces the shadow of any card size pixel-for-pixel. The card
+ * border is driven by the viewport and the offset and blur are constants, so
+ * every card wants the same shadow.
+ */
+const SHADOW_OFFSET = 6;    // card-space offset, down-right
+const SHADOW_PAD = 30;      // room for the blur to fall off in
+const SHADOW_BORDER = 48;   // nine-slice inset; must exceed SHADOW_PAD
+const SHADOW_TEX = SHADOW_BORDER * 2 + 8;
+
+let shadowTexture: Texture | null = null;
+
+function getShadowTexture(): Texture {
+  if (shadowTexture) return shadowTexture;
+  const c = document.createElement('canvas');
+  c.width = c.height = SHADOW_TEX;
+  const g = c.getContext('2d')!;
+  g.filter = 'blur(10px)';
+  g.fillStyle = 'rgba(0,0,0,0.30)';
+  const inner = SHADOW_TEX - SHADOW_PAD * 2;
+  g.fillRect(SHADOW_PAD, SHADOW_PAD, inner, inner);
+  // Punch the middle out. The paper covers it anyway, and leaving it solid
+  // would darken the card while it crossfades — without the bake, each child
+  // now blends with the background separately.
+  g.filter = 'none';
+  g.globalCompositeOperation = 'destination-out';
+  g.fillStyle = '#000';
+  g.fillRect(SHADOW_BORDER, SHADOW_BORDER, SHADOW_TEX - SHADOW_BORDER * 2,
+             SHADOW_TEX - SHADOW_BORDER * 2);
+  shadowTexture = Texture.from(c);
+  return shadowTexture;
+}
 
 export class VintageScene {
   root = new Container();
@@ -238,7 +278,9 @@ export class VintageScene {
         const idx = this.cards.indexOf(c);
         if (idx >= 0) this.cards.splice(idx, 1);
         this.cardsLayer.removeChild(c.container);
-        c.container.destroy({ children: true });
+        // texture:false — the slide texture is engine-owned and shared by
+        // other cards; destroying it is the documented way to crash the batcher.
+        c.container.destroy({ children: true, texture: false });
         continue;
       }
 
@@ -265,7 +307,7 @@ export class VintageScene {
   reset() {
     for (const c of this.cards) {
       this.cardsLayer.removeChild(c.container);
-      c.container.destroy({ children: true });
+      c.container.destroy({ children: true, texture: false });
     }
     this.cards = [];
   }
@@ -336,24 +378,30 @@ export class VintageScene {
     const x0 = -totalW / 2;
     const y0 = -totalH / 2;
 
-    // Soft drop shadow — black rect offset down-right with a BlurFilter for
-    // a subtle blurred penumbra (rather than a hard-edged offset rect).
-    const shadow = new Graphics();
-    const shadowOffset = 6;
-    shadow.rect(x0 + shadowOffset, y0 + shadowOffset, totalW, totalH);
-    shadow.fill({ color: 0x000000, alpha: 0.30 });
-    // quality 2 + half resolution instead of quality 4 at full: this blur is
-    // baked by cacheAsTexture() on the first frame after addPhoto — i.e. the
-    // transition's first frame — for every new card, so it was ~32 blur passes
-    // over card-sized render targets in one frame. A soft drop shadow has no
-    // high-frequency detail to lose, so the cheaper blur is visually equivalent
-    // at roughly an eighth of the cost.
-    shadow.filters = [new BlurFilter({ strength: 14, quality: 2, resolution: 0.5 })];
+    // Drop shadow — the shared pre-blurred texture, stretched to this card.
+    // A sprite drawn at width W represents a shadow rect of W - 2*PAD inset
+    // PAD from its left edge, so offsetting by PAD lines the rect up with the
+    // paper (plus the usual down-right offset).
+    const shadow = new NineSliceSprite({
+      texture: getShadowTexture(),
+      leftWidth: SHADOW_BORDER,
+      topHeight: SHADOW_BORDER,
+      rightWidth: SHADOW_BORDER,
+      bottomHeight: SHADOW_BORDER,
+      width: totalW + SHADOW_PAD * 2,
+      height: totalH + SHADOW_PAD * 2,
+    });
+    shadow.position.set(
+      x0 + SHADOW_OFFSET - SHADOW_PAD,
+      y0 + SHADOW_OFFSET - SHADOW_PAD,
+    );
 
-    // Warm off-white paper
-    const paper = new Graphics();
-    paper.rect(x0, y0, totalW, totalH);
-    paper.fill({ color: 0xf5efe4 });
+    // Warm off-white paper. A tinted sprite rather than Graphics: cheaper, and
+    // it avoids Pixi's GraphicsContext needing an explicit destroy option.
+    const paper = new Sprite(Texture.WHITE);
+    paper.tint = 0xf5efe4;
+    paper.setSize(totalW, totalH);
+    paper.position.set(x0, y0);
 
     // Photo — scaled to exact (photoW, photoH)
     const sprite = new Sprite(texture);
@@ -371,15 +419,12 @@ export class VintageScene {
     container.rotation = pose.angle;
     container.scale.set(pose.scale);
 
-    // The card's internal geometry never changes after construction — only its
-    // container alpha (fade) and transform (drift/camera) animate. Bake the
-    // whole card (incl. the expensive shadow BlurFilter) into a single texture
-    // once, so each frame just re-transforms a sprite instead of re-running a
-    // blur pass per card. (PixiJS v8 cacheAsTexture — render-to-texture cache.)
-    container.cacheAsTexture(true);
+    // Deliberately NOT cached with cacheAsTexture(): there is no per-frame work
+    // left to bake (three batched quads, no filters), and caching cost a
+    // power-of-two render target per card while clipping the shadow's penumbra.
 
     return {
-      container, shadow, paper, sprite, entry,
+      container, entry,
       baseX: pose.x,
       baseY: pose.y,
       baseAngle: pose.angle,
