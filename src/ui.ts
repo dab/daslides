@@ -62,10 +62,15 @@ class VirtualList {
 
   private scrollIntoView(i: number) {
     if (i < 0) return;
+    const viewH = this.container.clientHeight;
+    // Drawer closed -> the list has zero height, so `bot > sTop + 0` is always
+    // true and we would write scrollTop on every slide change. That write fires
+    // a scroll event -> scheduleRender() -> a rAF that recycles rows, landing
+    // DOM churn on the transition's second frame for no benefit.
+    if (viewH === 0) return;
     const top = i * this.rowHeight;
     const bot = top + this.rowHeight;
     const sTop = this.container.scrollTop;
-    const viewH = this.container.clientHeight;
     if (top < sTop) this.container.scrollTop = top;
     else if (bot > sTop + viewH) this.container.scrollTop = bot - viewH;
   }
@@ -165,6 +170,9 @@ export class UI {
   private playing = false;
   private total = 0;
   private dwellSec = 10;
+  private tDurSec = 1.5;
+  /** Slide-progress bar, driven imperatively so restarts never force layout. */
+  private progressAnim: Animation | null = null;
   private isIOS =
     /iphone|ipad|ipod/i.test(navigator.userAgent) ||
     (navigator.maxTouchPoints > 1 && /Macintosh/.test(navigator.userAgent));
@@ -176,6 +184,7 @@ export class UI {
     });
 
     this.dwellSec = +this.dwellInp.value > 0 ? +this.dwellInp.value : 10;
+    this.tDurSec = +this.tdurInp.value > 0 ? +this.tdurInp.value : 1.5;
 
     // On touch devices `webkitdirectory` (folder picking) doesn't work — CSS
     // hides the folder label, so promote the photo label to the primary action.
@@ -208,7 +217,11 @@ export class UI {
       const v = +this.dwellInp.value;
       if (v > 0) { this.dwellSec = v; b.onDwell(v); }
     });
-    this.tdurInp.addEventListener('change', () => b.onTDur(+this.tdurInp.value));
+    this.tdurInp.addEventListener('change', () => {
+      const v = +this.tdurInp.value;
+      if (v > 0) this.tDurSec = v;
+      b.onTDur(v);
+    });
 
     window.addEventListener('keydown', (e) => this.onKey(e));
 
@@ -362,7 +375,7 @@ export class UI {
     this.playing = playing;
     this.body.classList.toggle('playing', playing);
     this.playBtn.setAttribute('aria-label', playing ? 'Pause' : 'Play');
-    this.progressFill.style.animationPlayState = playing ? 'running' : 'paused';
+    if (this.progressAnim) { if (playing) this.progressAnim.play(); else this.progressAnim.pause(); }
   }
 
   setFolderName(name: string) {
@@ -392,11 +405,30 @@ export class UI {
   }
 
   /** Restart the dwell-progress bar so it grows over one dwell period. */
+  /**
+   * Restart the slide-progress bar.
+   *
+   * This runs on every slide change, which is the same instant a transition
+   * starts — so it must not touch layout. The old implementation restarted a
+   * CSS animation via the `void offsetWidth` reflow trick, forcing a synchronous
+   * full-document layout right when the renderer needs the frame budget. A Web
+   * Animations object restarts by setting `currentTime`, which costs nothing.
+   *
+   * Duration is the real cycle (`dwell + fade`), not `dwell` — otherwise the bar
+   * fills early and then sits full, reading as "stuck".
+   */
   private restartProgress() {
-    const f = this.progressFill;
-    f.style.animation = 'none';
-    void f.offsetWidth; // force reflow so the animation restarts
-    f.style.animation = `progressGrow ${this.dwellSec}s linear forwards`;
-    f.style.animationPlayState = this.playing ? 'running' : 'paused';
+    const durMs = (this.dwellSec + this.tDurSec) * 1000;
+    if (!this.progressAnim) {
+      this.progressAnim = this.progressFill.animate(
+        [{ transform: 'scaleX(0)' }, { transform: 'scaleX(1)' }],
+        { duration: durMs, easing: 'linear', fill: 'forwards' },
+      );
+    } else {
+      this.progressAnim.effect?.updateTiming({ duration: durMs });
+    }
+    this.progressAnim.currentTime = 0;
+    if (this.playing) this.progressAnim.play();
+    else this.progressAnim.pause();
   }
 }
