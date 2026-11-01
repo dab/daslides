@@ -2,6 +2,9 @@
 
 export const TAU = Math.PI * 2;
 
+export const clamp = (v: number, lo: number, hi: number) =>
+  v < lo ? lo : v > hi ? hi : v;
+
 export const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
 
 /** Smoothstep eased 0..1 (clamps out-of-range input). */

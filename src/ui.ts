@@ -155,6 +155,10 @@ class VirtualList {
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 
+// Must match the min/max attributes on #dwell and #tdur in index.html.
+const DWELL_MIN = 2, DWELL_MAX = 60;
+const TDUR_MIN = 0.5, TDUR_MAX = 10;
+
 export class UI {
   private body = document.body;
 
@@ -207,8 +211,8 @@ export class UI {
       this.setPanel(false); // jumping is a "go look at it" action — get out of the way
     });
 
-    this.dwellSec = +this.dwellInp.value > 0 ? +this.dwellInp.value : 10;
-    this.tDurSec = +this.tdurInp.value > 0 ? +this.tdurInp.value : 1.5;
+    this.dwellSec = this.commitNumber(this.dwellInp, DWELL_MIN, DWELL_MAX, 10);
+    this.tDurSec = this.commitNumber(this.tdurInp, TDUR_MIN, TDUR_MAX, 1.5);
 
     // On touch devices `webkitdirectory` (folder picking) doesn't work — CSS
     // hides the folder label, so promote the photo label to the primary action.
@@ -238,13 +242,14 @@ export class UI {
 
     this.trSel.addEventListener('change', () => b.onTransition(this.trSel.value));
     this.dwellInp.addEventListener('change', () => {
-      const v = +this.dwellInp.value;
-      if (v > 0) { this.dwellSec = v; b.onDwell(v); }
+      this.dwellSec = this.commitNumber(this.dwellInp, DWELL_MIN, DWELL_MAX, this.dwellSec);
+      b.onDwell(this.dwellSec);
+      this.restartProgress();
     });
     this.tdurInp.addEventListener('change', () => {
-      const v = +this.tdurInp.value;
-      if (v > 0) this.tDurSec = v;
-      b.onTDur(v);
+      this.tDurSec = this.commitNumber(this.tdurInp, TDUR_MIN, TDUR_MAX, this.tDurSec);
+      b.onTDur(this.tDurSec);
+      this.restartProgress();
     });
 
     window.addEventListener('keydown', (e) => this.onKey(e));
@@ -334,6 +339,26 @@ export class UI {
       this.helpBtn.focus();
     }
     this.wake();
+  }
+
+  /**
+   * Read a number input, clamp it to the same bounds the markup advertises,
+   * and write the clamped value back so the field shows what is in effect.
+   *
+   * The min/max attributes only drive the spinner, so without this an empty or
+   * out-of-range field reached the engine and got clamped there instead — the
+   * UI and the engine then disagreed and the progress bar drifted from the real
+   * slide length for good.
+   */
+  private commitNumber(
+    input: HTMLInputElement, min: number, max: number, fallback: number,
+  ): number {
+    const raw = +input.value;
+    const v = Number.isFinite(raw) && raw > 0
+      ? Math.min(max, Math.max(min, raw))
+      : fallback;
+    input.value = String(v);
+    return v;
   }
 
   private autoHideEnabled(): boolean { return this.autoHideBox.checked; }

@@ -13,7 +13,7 @@ import { VERTEX } from './transitions/shared.ts';
 import { VintageScene } from './scenes/vintageScene.ts';
 import { createWakeLock, type WakeLockHandle } from './wakeLock.ts';
 import { decodeToBitmap, getImageBlob } from './imageLoader.ts';
-import { rndRange as randInRange } from './util.ts';
+import { clamp, rndRange as randInRange } from './util.ts';
 import { perfFrame, perfMark, perfStats, perfTransition } from './perf.ts';
 import type { ImageEntry } from './folder.ts';
 
@@ -390,8 +390,10 @@ void main(){ fragColor = vec4(0.0); }`;
     })();
   }
 
-  setDwell(sec: number) { this.setTiming(Math.max(1, sec), this.tDurSec); }
-  setTDur(sec: number)  { this.setTiming(this.dwellSec, Math.max(0.2, sec)); }
+  // Bounds match the min/max advertised on #dwell and #tdur, so the UI and the
+  // engine can't disagree about what is in effect.
+  setDwell(sec: number) { this.setTiming(clamp(sec, 2, 60), this.tDurSec); }
+  setTDur(sec: number)  { this.setTiming(this.dwellSec, clamp(sec, 0.5, 10)); }
 
   /**
    * Change dwell / fade duration while preserving the current slide's motion
