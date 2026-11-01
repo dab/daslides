@@ -135,6 +135,8 @@ export class Engine {
   private inTransition = false;
   /** Set while beginTransition is between its first await and settling. */
   private transitionPending = false;
+  /** Latch so the "nothing loads" message is reported once per folder. */
+  private gaveUp = false;
   /** Decoded-but-not-yet-uploaded texture sources; see queueUpload(). */
   private uploadQueue: TextureSource[] = [];
   private uploadRaf = 0;
@@ -165,6 +167,8 @@ export class Engine {
 
   onSlideChange?: (index: number) => void;
   onPlayingChange?: (playing: boolean) => void;
+  /** Every item in the folder failed to decode — nothing can be shown. */
+  onAllFailed?: () => void;
 
   async init(host: HTMLElement) {
     this.app = new Application();
@@ -450,6 +454,7 @@ void main(){ fragColor = vec4(0.0); }`;
     this.items = items.slice();
     this.cursor = 0;
     this.failed.clear();
+    this.gaveUp = false;
     this.preloadWindow();
     this.startSlide();
   }
@@ -544,7 +549,7 @@ void main(){ fragColor = vec4(0.0); }`;
       this.dwellTimer = 0;
       if (!this.playing) return;
       const next = this.findLoadable(this.cursor, 1);
-      if (next === null) { this.setPlaying(false); return; }
+      if (next === null) { this.giveUp(); return; }
       this.beginTransition(next).catch(() => {});
     }, remaining);
   }
@@ -553,6 +558,15 @@ void main(){ fragColor = vec4(0.0); }`;
   }
 
   /** One-shot render — used whenever the ticker is stopped but state changed. */
+  /** Nothing in the folder can be decoded. Stop, and say so once. */
+  private giveUp() {
+    this.setPlaying(false);
+    if (this.gaveUp) return;
+    this.gaveUp = true;
+    console.error('[slideshow] no loadable items in folder');
+    this.onAllFailed?.();
+  }
+
   private renderOnce() {
     this.app.renderer.render({ container: this.app.stage });
   }
@@ -584,11 +598,7 @@ void main(){ fragColor = vec4(0.0); }`;
   private advance(dir: 1 | -1) {
     if (this.items.length === 0 || this.inTransition) return;
     const next = this.findLoadable(this.cursor, dir);
-    if (next === null) {
-      this.setPlaying(false);
-      console.error('[slideshow] no loadable items in folder');
-      return;
-    }
+    if (next === null) { this.giveUp(); return; }
     this.navigateTo(next);
   }
 
@@ -839,7 +849,7 @@ void main(){ fragColor = vec4(0.0); }`;
     // Skip past a failed cursor (e.g. first item is corrupt)
     if (this.failed.has(this.items[this.cursor])) {
       const next = this.findLoadable(this.cursor, 1);
-      if (next === null) { this.setPlaying(false); return; }
+      if (next === null) { this.giveUp(); return; }
       this.cursor = next;
     }
     const entry = this.items[this.cursor];
@@ -848,7 +858,7 @@ void main(){ fragColor = vec4(0.0); }`;
     catch {
       // Newly-failed: bump cursor and try again
       const next = this.findLoadable(this.cursor, 1);
-      if (next === null) { this.setPlaying(false); return; }
+      if (next === null) { this.giveUp(); return; }
       this.cursor = next;
       return this.startSlide();
     }
@@ -922,12 +932,12 @@ void main(){ fragColor = vec4(0.0); }`;
         try { incoming = await this.loadSlide(this.items[index]); break; }
         catch {
           const skipTo = this.findLoadable(index, 1);
-          if (skipTo === null) { this.setPlaying(false); return; }
+          if (skipTo === null) { this.giveUp(); return; }
           if (skipTo === index) return;
           index = skipTo;
         }
       }
-      if (!incoming) { this.setPlaying(false); return; }
+      if (!incoming) { this.giveUp(); return; }
       if (this.navToken !== myToken) return;
 
       // Set cursor BEFORE the history lookup so historySlides() walks back from
@@ -997,7 +1007,7 @@ void main(){ fragColor = vec4(0.0); }`;
       if (!this.inTransition && this.playing) {
         if ((now - this.slideStart) / 1000 >= this.dwellSec) {
           const next = this.findLoadable(this.cursor, 1);
-          if (next === null) { this.setPlaying(false); return; }
+          if (next === null) { this.giveUp(); return; }
           // Fire-and-forget; rejections are already logged inside.
           this.beginTransition(next).catch(() => {});
         }
@@ -1037,7 +1047,7 @@ void main(){ fragColor = vec4(0.0); }`;
       this.uniforms.uniforms.uDwellA = Math.min(1, (now - this.slideStart) / this.spanMs);
       if (elapsed >= this.dwellSec + this.tDurSec) {
         const next = this.findLoadable(this.cursor, 1);
-        if (next === null) { this.setPlaying(false); return; }
+        if (next === null) { this.giveUp(); return; }
         this.beginTransition(next).catch(() => {});
       }
     }

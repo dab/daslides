@@ -13,6 +13,9 @@ export interface UIBindings {
   onJump: (index: number) => void;
 }
 
+export const WEBGL2_MESSAGE =
+  'This browser does not support WebGL2, which is required for daslides.';
+
 /**
  * Virtualized side-panel list — only ~30 rows live in the DOM at any time,
  * so the side panel stays smooth at 10k+ photos. The list itself is a
@@ -430,12 +433,14 @@ export class UI {
     );
   }
 
-  private toast(msg: string) {
+  toast(msg: string) {
     this.toastEl.textContent = msg;
     this.toastEl.hidden = false;
     this.toastEl.classList.remove('show');
-    void this.toastEl.offsetWidth; // restart the fade
-    this.toastEl.classList.add('show');
+    // Next frame, so removing and re-adding the class actually restarts the
+    // transition. (Reading offsetWidth would do it too, at the cost of a forced
+    // layout.)
+    requestAnimationFrame(() => this.toastEl.classList.add('show'));
     clearTimeout(this.toastTimer);
     this.toastTimer = window.setTimeout(() => {
       this.toastEl.classList.remove('show');
@@ -448,6 +453,19 @@ export class UI {
     this.body.classList.toggle('playing', playing);
     this.playBtn.setAttribute('aria-label', playing ? 'Pause' : 'Play');
     if (this.progressAnim) { if (playing) this.progressAnim.play(); else this.progressAnim.pause(); }
+  }
+
+  /**
+   * Renderer is unusable — say so and take away every way to pick photos,
+   * including the two in the drawer, so the user can't walk into a black screen.
+   */
+  showFatal(msg: string) {
+    const sub = document.querySelector('.empty__sub');
+    if (sub) sub.textContent = msg;
+    for (const id of ['empty-folder', 'empty-photos', 'pick-folder', 'pick-photos-btn']) {
+      const el = document.getElementById(id);
+      if (el) el.style.display = 'none';
+    }
   }
 
   setFolderName(name: string) {

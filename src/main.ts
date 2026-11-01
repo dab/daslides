@@ -1,5 +1,5 @@
 import { Engine } from './engine.ts';
-import { UI } from './ui.ts';
+import { UI, WEBGL2_MESSAGE } from './ui.ts';
 import { entriesFromFileList, type ImageEntry } from './folder.ts';
 import type { TransitionId } from './transitions/index.ts';
 
@@ -47,12 +47,23 @@ const ui = new UI({
 
 engine.onSlideChange = (i) => ui.setActive(i);
 engine.onPlayingChange = (p) => ui.setPlaying(p);
+engine.onAllFailed = () =>
+  ui.toast('None of those files could be opened. Try a folder of JPEGs.');
 
 // Initialize the renderer in the background. `loadFiles` awaits this before
 // driving the engine, so picking still works even if init is slow.
 const ready = (async () => {
-  console.info('[slideshow] engine init…');
-  await engine.init(stage);
+  // Probe before handing Pixi the canvas. Pixi can resolve init on a WebGL1-only
+  // device and then fail to compile every `#version 300 es` shader, which shows
+  // up as black slides with no error anywhere.
+  if (!document.createElement('canvas').getContext('webgl2')) {
+    throw new Error('no-webgl2');
+  }
+  try {
+    await engine.init(stage);
+  } catch (err) {
+    throw new Error('init-failed', { cause: err });
+  }
   // Browsers persist <select>/<input> values across reloads — sync the engine
   // to what the user actually sees before any folder loads.
   const trSel    = document.getElementById('transition') as HTMLSelectElement;
@@ -61,24 +72,28 @@ const ready = (async () => {
   engine.setTransition(trSel.value as TransitionId);
   if (+dwellInp.value > 0) engine.setDwell(+dwellInp.value);
   if (+tdurInp.value  > 0) engine.setTDur(+tdurInp.value);
-  console.info('[slideshow] engine ready');
 })().catch((err) => {
   initFailed = true;
   console.error('[slideshow] engine init failed:', err);
-  const sub = document.querySelector('.empty__sub');
-  if (sub) sub.textContent = 'This browser does not support WebGL2, which is required for daslides.';
-  for (const id of ['empty-folder', 'empty-photos']) {
-    const el = document.getElementById(id);
-    if (el) el.style.display = 'none';
-  }
+  // Only blame WebGL2 when that is actually the problem — this used to report
+  // any startup error, including our own bugs, as an unsupported browser.
+  ui.showFatal(
+    err?.message === 'no-webgl2'
+      ? WEBGL2_MESSAGE
+      : 'daslides could not start the renderer on this device.',
+  );
 });
 
 async function loadFiles(name: string, files: ImageEntry[]) {
-  console.info('[slideshow] files picked:', files.length, '→', name);
   if (files.length === 0) {
-    alert('No images found in the selection.');
+    ui.toast('No images found in that selection.');
     return;
   }
+  // Wait for the renderer BEFORE touching the UI. setFolderName fades out the
+  // welcome card, which is where the startup error message lives — so doing
+  // this the other way round hid the explanation and left a black screen.
+  await ready;
+  if (initFailed) return;
   // "Shuffle on load" — Fisher–Yates the items so playback doesn't always start
   // at file #1. Browsers persist the checkbox state across reloads.
   const shuffleOnLoad = (document.getElementById('shuffle-on-load') as HTMLInputElement)?.checked;
@@ -91,8 +106,6 @@ async function loadFiles(name: string, files: ImageEntry[]) {
   items = files;
   ui.setFolderName(name);
   ui.renderList(files);
-  await ready;
-  if (initFailed) return;
   engine.setItems(files);
   ui.setActive(0);
   engine.setPlaying(true);
