@@ -386,6 +386,9 @@ void main(){ fragColor = vec4(0.0); }`;
       if (this.navToken !== myToken) return;
       const history = await this.historySlides(3);
       if (this.navToken !== myToken) return;
+      // Seeding, not transitioning: show the pile at once. A fade here would
+      // never run if we are paused (the clock is frozen, so tick() can't raise
+      // the alpha) and the screen would stay black.
       this.ensureVintageScene().addPhoto(
         {
           focal: { texture: focal.texture, entry: focal.entry },
@@ -394,6 +397,7 @@ void main(){ fragColor = vec4(0.0); }`;
         this.tDurSec,
         this.dwellSec,
         this.clock(),
+        true,
       );
       this.slideStart = this.clock();
       this.sync();
@@ -878,6 +882,7 @@ void main(){ fragColor = vec4(0.0); }`;
     } else {
       const history = await this.historySlides(3);
       if (this.navToken !== myToken) return;
+      // Same as reseedScene: this is a seed, so no fade.
       this.ensureVintageScene().addPhoto(
         {
           focal: { texture: slide.texture, entry: slide.entry },
@@ -886,6 +891,7 @@ void main(){ fragColor = vec4(0.0); }`;
         this.tDurSec,
         this.dwellSec,
         this.clock(),
+        true,
       );
     }
     this.slideStart = this.clock();

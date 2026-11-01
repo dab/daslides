@@ -162,12 +162,28 @@ export class VintageScene {
 
   resize(w: number, h: number) {
     if (w === this.screenW && h === this.screenH) return;
+    const sx = w / this.screenW;
+    const sy = h / this.screenH;
+    const oldCx = this.screenW / 2;
+    const oldCy = this.screenH / 2;
     this.screenW = w;
     this.screenH = h;
     this.cardsLayer.pivot.set(w / 2, h / 2);
     this.cardsLayer.position.set(w / 2, h / 2);
-    this.reset();
-    this.needsReseed = true;
+    // Move the existing cards rather than destroying them. Pixi fires a resize
+    // event per frame for the whole of a window drag, so rebuilding meant a
+    // black frame and a fresh fade-up-from-black on every single one. Card
+    // contents stay their old size until the next cycle replaces them, which is
+    // invisible next to the pile blinking out.
+    for (const c of this.cards) {
+      c.baseX = (c.baseX - oldCx) * sx + w / 2;
+      c.baseY = (c.baseY - oldCy) * sy + h / 2;
+    }
+    // Only an empty pile needs seeding. This used to be set unconditionally,
+    // so the no-op resize Pixi emits on startup left the flag armed and the
+    // next identical-size resize event rebuilt the whole pile for nothing —
+    // cancelling any transition in flight along with it.
+    if (this.cards.length === 0) this.needsReseed = true;
   }
 
   /** Entries currently referenced by any live card. */
@@ -188,8 +204,20 @@ export class VintageScene {
    * @param dwellSec how long the focal will stay on screen — used as the
    *                 timescale for the camera ramp.
    */
-  addPhoto(ctx: AddPhotoCtx, fadeDurSec: number, dwellSec: number, now: number) {
-    const fadeMs = fadeDurSec * 1000;
+  addPhoto(
+    ctx: AddPhotoCtx,
+    fadeDurSec: number,
+    dwellSec: number,
+    now: number,
+    /**
+     * Show the new cards immediately instead of fading them in. Used when
+     * seeding an empty pile, which has nothing to cross-fade *from* — and which
+     * can happen while paused, when the clock is frozen and tick() never runs,
+     * so a fade would leave the cards at alpha 0 forever and the screen black.
+     */
+    instant = false,
+  ) {
+    const fadeMs = instant ? 0 : fadeDurSec * 1000;
 
     // Camera: pile slowly rotates and zooms over each cycle. Targets are
     // ABSOLUTE bounded values (never accumulate). Research-backed for a
@@ -230,7 +258,11 @@ export class VintageScene {
       c.fadeStart = now;
       c.fadeDur = fadeMs;
       c.dying = true;
-      c.destroyAtMs = now + fadeMs + 60;
+      // Exactly fadeMs, no grace period: the engine settles the transition on
+      // the first frame at or after fadeMs and then stops the ticker if paused,
+      // so a card scheduled even slightly later was never reaped — it sat at
+      // alpha 0 holding a slide texture un-evictable for the whole pause.
+      c.destroyAtMs = now + fadeMs;
     }
 
     // Build new bg cards FIRST (so we can z-order focal above them)
@@ -242,7 +274,7 @@ export class VintageScene {
       card.fadeTo = 1.0;
       card.fadeStart = now;
       card.fadeDur = fadeMs;
-      card.container.alpha = 0;
+      card.container.alpha = instant ? 1 : 0;
       this.cardsLayer.addChild(card.container);
       this.cards.push(card);
     }
@@ -253,9 +285,11 @@ export class VintageScene {
     focalCard.fadeTo = 1.0;
     focalCard.fadeStart = now;
     focalCard.fadeDur = fadeMs;
-    focalCard.container.alpha = 0;
+    focalCard.container.alpha = instant ? 1 : 0;
     this.cardsLayer.addChild(focalCard.container);
     this.cards.push(focalCard);
+
+    this.needsReseed = false;
   }
 
   /** Per-frame update — applies fade tween and continuous drift. */
