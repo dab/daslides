@@ -114,6 +114,8 @@ export class Engine {
 
   private playing = false;
   private inTransition = false;
+  /** Set while beginTransition is between its first await and settling. */
+  private transitionPending = false;
   private navToken = 0;
   private dwellSec = 10;
   private tDurSec = 1.5;
@@ -330,8 +332,29 @@ void main(){ fragColor = vec4(0.0); }`;
     })();
   }
 
-  setDwell(sec: number) { this.dwellSec = Math.max(1, sec); if (this.app) this.sync(); }
-  setTDur(sec: number)  { this.tDurSec  = Math.max(0.2, sec); }
+  setDwell(sec: number) { this.setTiming(Math.max(1, sec), this.tDurSec); }
+  setTDur(sec: number)  { this.setTiming(this.dwellSec, Math.max(0.2, sec)); }
+
+  /**
+   * Change dwell / fade duration while preserving the current slide's motion
+   * progress. `spanMs` is the denominator of the Ken-Burns parameterization, so
+   * naively changing dwell 10 -> 30 would collapse `uDwellA` by 3x and jump the
+   * zoom backwards. Read the fraction against the OLD span, then re-anchor
+   * `slideStart` against the NEW one.
+   */
+  private setTiming(dwell: number, tdur: number) {
+    if (!this.app || this.items.length === 0) {
+      this.dwellSec = dwell;
+      this.tDurSec = tdur;
+      return;
+    }
+    const now = this.clock();
+    const frac = (now - this.slideStart) / this.spanMs;   // OLD span
+    this.dwellSec = dwell;
+    this.tDurSec = tdur;                                   // span changes here
+    this.slideStart = now - frac * this.spanMs;            // NEW span
+    this.sync();
+  }
 
   // ─── items / cache ────────────────────────────────────────────────────────
 
@@ -397,6 +420,22 @@ void main(){ fragColor = vec4(0.0); }`;
       this.pausedAccum += performance.now() - this.pauseMark;
       this.pauseMark = 0;
     }
+  }
+
+  /**
+   * A slide's full visible life, in ms: its incoming transition, its dwell, and
+   * its outgoing transition. `slideStart` marks the beginning of that window
+   * (== the incoming transition's `transStart`), so per-slide Ken-Burns motion
+   * normalized over `spanMs` runs at ONE constant rate from keyframe to
+   * keyframe with no dead window and no clamping mid-playback.
+   *
+   * Normalizing over `dwellSec` alone — as this used to — left the motion
+   * pinned at its end keyframe for the last `tDurSec` of every slide, then
+   * extrapolated past it during the transition (which drove zoom below 1.0 and
+   * exposed blurred bars on landscape photos). Don't reintroduce that.
+   */
+  private get spanMs(): number {
+    return (this.dwellSec + 2 * this.tDurSec) * 1000;
   }
 
   /** True for transitions that animate continuously *during* the dwell. */
@@ -676,46 +715,63 @@ void main(){ fragColor = vec4(0.0); }`;
   }
 
   private async beginTransition(toIndex: number): Promise<void> {
-    const myToken = ++this.navToken;
-    const entry = this.items[toIndex];
-    let incoming: LoadedSlide;
-    try { incoming = await this.loadSlide(entry); }
-    catch {
-      // Newly-discovered bad file. Jump past it.
-      const skipTo = this.findLoadable(toIndex, 1);
-      if (skipTo === null) { this.setPlaying(false); return; }
-      if (skipTo === toIndex) return;
-      return this.beginTransition(skipTo);
-    }
-    if (this.navToken !== myToken) return;
+    // `inTransition` only flips AFTER the await below, so without this guard
+    // tick() re-enters every frame while a load is pending — on a cache miss
+    // that is dozens of discarded navigations, each bumping navToken. Guarding
+    // on `inTransition` too makes jump() during a crossfade a no-op, which
+    // matches what advance() already does.
+    if (this.transitionPending || this.inTransition) return;
+    if (this.items.length === 0) return;
+    this.transitionPending = true;
+    try {
+      const myToken = ++this.navToken;
 
-    // Set cursor BEFORE history lookup so historySlides() walks back from the
-    // incoming slide, not the outgoing one. Flip inTransition + sync() so the
-    // ticker runs (and the clock is unfrozen) for the animation even if we're
-    // paused — sync() returns us to the prior state once the transition ends.
-    this.cursor = toIndex;
-    this.inTransition = true;
-    this.sync();
-    this.transStart = this.clock();
-
-    if (this.currentTransition.kind === 'shader') {
-      this.bind('B', incoming);
-      this.uniforms.uniforms.uDwellB = 0;
-    } else {
-      const history = await this.historySlides(3);
+      // Walk forward past newly-discovered bad files. A loop rather than
+      // recursion so the re-entrancy guard above doesn't block the retry.
+      let index = toIndex;
+      let incoming: LoadedSlide | undefined;
+      for (let step = 0; step < this.items.length; step++) {
+        try { incoming = await this.loadSlide(this.items[index]); break; }
+        catch {
+          const skipTo = this.findLoadable(index, 1);
+          if (skipTo === null) { this.setPlaying(false); return; }
+          if (skipTo === index) return;
+          index = skipTo;
+        }
+      }
+      if (!incoming) { this.setPlaying(false); return; }
       if (this.navToken !== myToken) return;
-      this.ensureVintageScene().addPhoto(
-        {
-          focal: { texture: incoming.texture, entry: incoming.entry },
-          history: history.map(s => ({ texture: s.texture, entry: s.entry })),
-        },
-        this.tDurSec,
-        this.dwellSec,
-        this.transStart,
-      );
+
+      // Set cursor BEFORE history lookup so historySlides() walks back from the
+      // incoming slide, not the outgoing one. Flip inTransition + sync() so the
+      // ticker runs (and the clock is unfrozen) for the animation even if we're
+      // paused — sync() returns us to the prior state once the transition ends.
+      this.cursor = index;
+      this.inTransition = true;
+      this.sync();
+      this.transStart = this.clock();
+
+      if (this.currentTransition.kind === 'shader') {
+        this.bind('B', incoming);
+        this.uniforms.uniforms.uDwellB = 0;
+      } else {
+        const history = await this.historySlides(3);
+        if (this.navToken !== myToken) return;
+        this.ensureVintageScene().addPhoto(
+          {
+            focal: { texture: incoming.texture, entry: incoming.entry },
+            history: history.map(s => ({ texture: s.texture, entry: s.entry })),
+          },
+          this.tDurSec,
+          this.dwellSec,
+          this.transStart,
+        );
+      }
+      this.preloadWindow();
+      this.onSlideChange?.(this.cursor);
+    } finally {
+      this.transitionPending = false;
     }
-    this.preloadWindow();
-    this.onSlideChange?.(this.cursor);
   }
 
   // ─── per-frame ────────────────────────────────────────────────────────────
@@ -748,9 +804,8 @@ void main(){ fragColor = vec4(0.0); }`;
       const t = Math.min(1, (now - this.transStart) / (this.tDurSec * 1000));
       this.uniforms.uniforms.uProgress = t;
 
-      const dwellA = (now - this.slideStart) / (this.dwellSec * 1000);
-      this.uniforms.uniforms.uDwellA = Math.min(1.25, dwellA);
-      this.uniforms.uniforms.uDwellB = t * (this.tDurSec / this.dwellSec);
+      this.uniforms.uniforms.uDwellA = Math.min(1, (now - this.slideStart) / this.spanMs);
+      this.uniforms.uniforms.uDwellB = Math.min(1, (now - this.transStart) / this.spanMs);
 
       if (t >= 1) {
         const r = this.mesh.shader!.resources as any;
@@ -761,15 +816,18 @@ void main(){ fragColor = vec4(0.0); }`;
         const fm = this.uniforms.uniforms.uFadeMag as Float32Array;
         fm[0] = fm[1];
         this.uniforms.uniforms.uProgress = 0;
-        const newDwellA = this.uniforms.uniforms.uDwellB as number;
-        this.uniforms.uniforms.uDwellA = newDwellA;
-        this.slideStart = now - newDwellA * this.dwellSec * 1000;
+        // B becomes A. `slideStart` is *definitionally* the clock time this
+        // slide's visible life began — which is exactly `transStart`. Assigning
+        // it directly (rather than back-dating from `now`) keeps the dwell
+        // parameterization continuous with zero frame-overshoot drift.
+        this.uniforms.uniforms.uDwellA = this.uniforms.uniforms.uDwellB;
+        this.slideStart = this.transStart;
         this.inTransition = false;
         this.sync();
       }
     } else if (this.playing) {
       const elapsed = (now - this.slideStart) / 1000;
-      this.uniforms.uniforms.uDwellA = Math.min(1.0, elapsed / this.dwellSec);
+      this.uniforms.uniforms.uDwellA = Math.min(1, (now - this.slideStart) / this.spanMs);
       if (elapsed >= this.dwellSec + this.tDurSec) {
         const next = this.findLoadable(this.cursor, 1);
         if (next === null) { this.setPlaying(false); return; }

@@ -27,14 +27,18 @@ uniform vec2 uFadeMag;  // x = outgoing magnitude, y = incoming magnitude
 
 void main(void) {
   // Outgoing pushes 1.0 → 1.0 + magA (camera dollies forward)
-  vec3 a = sampleSlide(uTexA, vUV, uAspectA,
+  vec3 col = sampleSlide(uTexA, vUV, uAspectA,
     vec4(0.0), vec2(1.0, 1.0 + uFadeMag.x), uProgress);
 
-  // Incoming pulls 1.0 + magB → 1.0 (camera settles to rest)
-  vec3 b = sampleSlide(uTexB, vUV, uAspectB,
-    vec4(0.0), vec2(1.0 + uFadeMag.y, 1.0), uProgress);
-
-  vec3 col = mix(a, b, ease(uProgress));
+  // Mid-dwell uProgress is 0 and uTexB === uTexA — skip the second sample
+  // entirely. uProgress is a UNIFORM, so the branch is uniform across the draw
+  // call (no divergence).
+  if (uProgress > 0.0) {
+    // Incoming pulls 1.0 + magB → 1.0 (camera settles to rest)
+    vec3 b = sampleSlide(uTexB, vUV, uAspectB,
+      vec4(0.0), vec2(1.0 + uFadeMag.y, 1.0), uProgress);
+    col = mix(col, b, ease(uProgress));
+  }
   fragColor = vec4(col, 1.0);
 }
 `,

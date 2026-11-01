@@ -25,9 +25,15 @@ export const kenBurns: TransitionDef = {
     FRAG_PRELUDE +
     /* glsl */ `
 void main(void) {
-  vec3 a = sampleSlideContain(uTexA, vUV, uAspectA, uPanZoomA, uZoomA, uDwellA);
-  vec3 b = sampleSlideContain(uTexB, vUV, uAspectB, uPanZoomB, uZoomB, uDwellB);
-  vec3 col = mix(a, b, ease(uProgress));
+  vec3 col = sampleSlideContain(uTexA, vUV, uAspectA, uPanZoomA, uZoomA, uDwellA);
+  // Mid-dwell uProgress is 0 and uTexB === uTexA, so sampling B would be pure
+  // waste — and B's sample is the expensive one (it can hit the blurred-bar
+  // path). uProgress is a UNIFORM, so this branch is uniform across the draw
+  // call: zero divergence, and it halves steady-state fillrate.
+  if (uProgress > 0.0) {
+    vec3 b = sampleSlideContain(uTexB, vUV, uAspectB, uPanZoomB, uZoomB, uDwellB);
+    col = mix(col, b, ease(uProgress));
+  }
   fragColor = vec4(col, 1.0);
 }
 `,
