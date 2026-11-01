@@ -189,7 +189,13 @@ export class Engine {
       console.warn('[slideshow] WebGL context lost');
     });
     this.app.canvas.addEventListener('webglcontextrestored', () => {
+      // Pixi re-uploads every texture on the next bind by itself; the only gap
+      // is that nothing asks for a frame. With the ticker stopped — a static
+      // dwell, or paused — the canvas would stay blank until the next
+      // transition, which for a slideshow left running on a tablet could be
+      // forever.
       console.info('[slideshow] WebGL context restored');
+      this.sync();
     });
 
     // Uncap the ticker so it runs at the display's native refresh rate

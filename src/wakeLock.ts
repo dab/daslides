@@ -15,8 +15,6 @@
 export interface WakeLockHandle {
   acquire(): Promise<void>;
   release(): Promise<void>;
-  /** True if we currently hold (or want to hold) a lock. */
-  readonly held: boolean;
 }
 
 export function createWakeLock(): WakeLockHandle {
@@ -24,18 +22,33 @@ export function createWakeLock(): WakeLockHandle {
   let sentinel: WakeLockSentinel | null = null;
   let wanted = false;
   let warned = false;
+  let acquiring: Promise<void> | null = null;
 
   async function doAcquire() {
     if (!supported || sentinel) return;
-    try {
-      sentinel = await navigator.wakeLock.request('screen');
-      sentinel.addEventListener('release', () => { sentinel = null; });
-    } catch (err) {
-      if (!warned) {
-        console.warn('[slideshow] Wake lock unavailable:', err);
-        warned = true;
+    // Without the in-flight guard and the re-check below, a quick play/pause
+    // leaked the lock permanently: acquire() awaited the request, release() saw
+    // no sentinel yet and returned, then the request resolved and stored one
+    // that nothing would ever release.
+    if (acquiring) return acquiring;
+    acquiring = (async () => {
+      try {
+        const s = await navigator.wakeLock.request('screen');
+        if (!wanted) { void s.release(); return; }
+        sentinel = s;
+        // Identity-guarded: a stale sentinel's late release event must not null
+        // out a newer one, which would leave it unreleasable.
+        s.addEventListener('release', () => { if (sentinel === s) sentinel = null; });
+      } catch (err) {
+        if (!warned) {
+          console.warn('[slideshow] Wake lock unavailable:', err);
+          warned = true;
+        }
+      } finally {
+        acquiring = null;
       }
-    }
+    })();
+    return acquiring;
   }
 
   async function doRelease() {
@@ -51,7 +64,6 @@ export function createWakeLock(): WakeLockHandle {
   });
 
   return {
-    get held() { return wanted; },
     async acquire() { wanted = true; await doAcquire(); },
     async release() { wanted = false; await doRelease(); },
   };
