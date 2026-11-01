@@ -1,24 +1,30 @@
 import {
   Application,
-  Assets,
+  ImageSource,
   Mesh,
   MeshGeometry,
   Shader,
   Texture,
   UniformGroup,
+  type TextureSource,
 } from 'pixi.js';
 import { TRANSITIONS, type TransitionDef, type TransitionId } from './transitions/index.ts';
 import { VERTEX } from './transitions/shared.ts';
 import { VintageScene } from './scenes/vintageScene.ts';
 import { createWakeLock, type WakeLockHandle } from './wakeLock.ts';
-import { getImageBlob } from './imageLoader.ts';
+import { decodeToBitmap, getImageBlob } from './imageLoader.ts';
 import { rndRange as randInRange } from './util.ts';
 import type { ImageEntry } from './folder.ts';
 
 interface LoadedSlide {
   entry: ImageEntry;
   texture: Texture;
-  url: string;
+  /**
+   * The decoded bitmap backing `texture`. We own it: Pixi's
+   * `TextureSource.destroy()` nulls `resource` but never calls `close()`, so
+   * releaseSlide has to.
+   */
+  bitmap: ImageBitmap;
   /** Random Ken-Burns motion params, set once per slide. */
   panZoom: { pan0: [number, number]; pan1: [number, number]; z0: number; z1: number };
   /**
@@ -110,12 +116,23 @@ export class Engine {
    * memory growth, even on libraries with thousands of photos.
    */
   private maxCache = 14;
+  /**
+   * Byte ceiling for resident slide textures (~384 MB). Entries in the preload
+   * window are exempt — see preloadWindow().
+   */
+  private maxTextureBytes = 384 * 1024 * 1024;
+  private residentBytes = 0;
+  /** Byte cost per cached entry, so eviction can settle the total up front. */
+  private slideBytes = new Map<ImageEntry, number>();
   private cursor = 0;
 
   private playing = false;
   private inTransition = false;
   /** Set while beginTransition is between its first await and settling. */
   private transitionPending = false;
+  /** Decoded-but-not-yet-uploaded texture sources; see queueUpload(). */
+  private uploadQueue: TextureSource[] = [];
+  private uploadRaf = 0;
   private navToken = 0;
   private dwellSec = 10;
   private tDurSec = 1.5;
@@ -358,12 +375,21 @@ void main(){ fragColor = vec4(0.0); }`;
 
   // ─── items / cache ────────────────────────────────────────────────────────
 
-  private async releaseSlide(s: LoadedSlide) {
+  /**
+   * Free a slide. Order matters: rebind the samplers FIRST, or the batcher can
+   * dereference a destroyed source ("can't access property 'alphaMode'").
+   *
+   * Slide textures are engine-owned (not Assets-managed), so destroying them
+   * directly is correct here — `Assets` is no longer involved at all.
+   */
+  private releaseSlide(s: LoadedSlide) {
     const r = this.mesh.shader!.resources as any;
     if (r.uTexA === s.texture.source) r.uTexA = this.fallbackTex.source;
     if (r.uTexB === s.texture.source) r.uTexB = this.fallbackTex.source;
-    try { await Assets.unload(s.url); } catch {}
-    try { URL.revokeObjectURL(s.url); } catch {}
+    const q = this.uploadQueue.indexOf(s.texture.source);
+    if (q >= 0) this.uploadQueue.splice(q, 1);
+    try { s.texture.destroy(true); } catch {}
+    try { s.bitmap.close(); } catch {}
   }
 
   setItems(items: ImageEntry[]) {
@@ -376,10 +402,7 @@ void main(){ fragColor = vec4(0.0); }`;
 
     const newSet = new Set(items);
     for (const [k, p] of this.cache) {
-      if (!newSet.has(k)) {
-        this.cache.delete(k);
-        p.then(s => this.releaseSlide(s)).catch(() => {});
-      }
+      if (!newSet.has(k)) this.evict(k, p);
     }
     this.items = items.slice();
     this.cursor = 0;
@@ -561,15 +584,39 @@ void main(){ fragColor = vec4(0.0); }`;
     if (this.vintageScene) {
       for (const e of this.vintageScene.heldEntries()) keep.add(e);
     }
-    if (this.cache.size > this.maxCache) {
+    // Evict on BOTH a slide count and a byte budget. The count alone is not a
+    // memory bound: on a high-DPI display the resolution cap barely bites, so 14
+    // resident slides could still reach ~1.3 GB. `keep` always wins — the
+    // working set is needed — so on a big screen this bounds the cache to the
+    // preload window instead of to 14.
+    const over = () =>
+      this.cache.size > this.maxCache || this.residentBytes > this.maxTextureBytes;
+    if (over()) {
       for (const [k, p] of this.cache) {
-        if (!keep.has(k)) {
-          this.cache.delete(k);
-          p.then(s => this.releaseSlide(s)).catch(() => {});
-          if (this.cache.size <= this.maxCache) break;
-        }
+        if (keep.has(k)) continue;
+        this.evict(k, p);
+        if (!over()) break;
       }
     }
+  }
+
+  /**
+   * Drop an entry from the cache and free its texture once it resolves.
+   *
+   * Byte accounting is settled synchronously here rather than in releaseSlide,
+   * which runs a microtask later — otherwise `residentBytes` would lag the
+   * eviction loop and it would over-evict in a single pass.
+   */
+  private evict(entry: ImageEntry, p: Promise<LoadedSlide>) {
+    this.cache.delete(entry);
+    this.residentBytes -= this.slideBytes.get(entry) ?? 0;
+    this.slideBytes.delete(entry);
+    p.then(s => this.releaseSlide(s)).catch(() => {});
+  }
+
+  /** RGBA8 plus the ~1/3 a full mip chain adds. */
+  private static sourceBytes(src: TextureSource): number {
+    return Math.round((src.pixelWidth * src.pixelHeight * 4 * 4) / 3);
   }
 
   /**
@@ -595,29 +642,106 @@ void main(){ fragColor = vec4(0.0); }`;
     return out;
   }
 
+  /**
+   * Per-axis device-pixel cap for a slide texture.
+   *
+   * `renderer.screen` is in CSS pixels, so device pixels are `screen x
+   * resolution`. The MAX_TEXTURE_SIZE clamp is not an optimisation — Pixi does
+   * not validate against it, so a 6000 px photo on a device reporting 4096
+   * (plenty of older iPads and mid-range Android) made texImage2D raise
+   * INVALID_VALUE and render a black slide, with no exception to explain it.
+   */
+  private textureCaps(): { capW: number; capH: number } {
+    const screen = this.app.renderer.screen;
+    const res = this.app.renderer.resolution;
+    const gl = (this.app.renderer as any).gl as WebGL2RenderingContext | undefined;
+    const hw = (gl && (gl.getParameter(gl.MAX_TEXTURE_SIZE) as number)) || 4096;
+    let w = Math.ceil(screen.width * res);
+    let h = Math.ceil(screen.height * res);
+    // Degenerate layout (startup, hidden container): fall back to something
+    // generous rather than baking a tiny texture we can never re-sharpen. Don't
+    // use a per-axis floor here — that would inflate the cap on short viewports
+    // (a 1280x720 screen would ask for 1024 tall) and waste memory.
+    if (w < 64 || h < 64) { w = 1920; h = 1080; }
+    return { capW: Math.min(w, hw), capH: Math.min(h, hw) };
+  }
+
+  /**
+   * Upload at most ONE texture per animation frame, and never on a transition
+   * frame.
+   *
+   * preloadWindow starts 5-7 loads at once, so without this their continuations
+   * land in a single microtask drain and run several multi-megabyte texImage2D
+   * calls back to back — one long dropped frame. Draining on our own rAF (rather
+   * than from tick()) keeps it to one code path that works whether the Pixi
+   * ticker is running or stopped, and keeps the upload out of the render pass.
+   */
+  private queueUpload(source: TextureSource) {
+    this.uploadQueue.push(source);
+    if (!this.uploadRaf) this.scheduleUpload();
+  }
+
+  private scheduleUpload() {
+    this.uploadRaf = requestAnimationFrame(() => {
+      this.uploadRaf = 0;
+      if (!this.inTransition) {
+        let source = this.uploadQueue.shift();
+        while (source && source.destroyed) source = this.uploadQueue.shift();
+        if (source) this.app.renderer.texture.initSource(source);
+      }
+      if (this.uploadQueue.length) this.scheduleUpload();
+    });
+  }
+
   private loadSlide(entry: ImageEntry): Promise<LoadedSlide> {
     if (this.failed.has(entry)) {
       return Promise.reject(new Error(`previously failed: ${entry.path}`));
     }
     if (this.cache.has(entry)) return this.cache.get(entry)!;
     const p = (async (): Promise<LoadedSlide> => {
-      let url: string | undefined;
+      let bitmap: ImageBitmap | undefined;
       try {
         const file = await entry.getFile();
         const blob = await getImageBlob(file);
         if (!blob) throw new Error(`no preview extractable for ${entry.path}`);
-        url = URL.createObjectURL(blob);
-        const texture = await Assets.load<Texture>({ src: url, parser: 'loadTextures' });
-        const aspect = texture.width / Math.max(1, texture.height);
+        const { capW, capH } = this.textureCaps();
+        bitmap = await decodeToBitmap(blob, capW, capH);
+        const source = new ImageSource({
+          resource: bitmap,
+          // The bitmap is already premultiplied (decodeToBitmap asks for it),
+          // so declare that rather than letting Pixi premultiply again on
+          // upload — which would double-premultiply and force a driver-side
+          // CPU pass over every pixel.
+          alphaMode: 'premultiplied-alpha',
+          // Sufficient on its own: GlTextureSystem._initSource derives
+          // mipLevelCount itself (WebGL2 supports non-power-of-two mipmaps), and
+          // the default scaleMode 'linear' already yields LINEAR_MIPMAP_LINEAR.
+          // Do NOT also pass mipLevelCount — it is overwritten.
+          autoGenerateMipmaps: true,
+          label: entry.path,
+        });
+        // Must be set AFTER construction: ImageSource's constructor assigns
+        // `autoGarbageCollect = true` unconditionally after super(), so passing
+        // it in the options above would be silently ignored. The engine evicts
+        // explicitly (releaseSlide), so Pixi's idle GC must not second-guess it
+        // and silently discard a prewarmed upload.
+        source.autoGarbageCollect = false;
+        const texture = new Texture({ source });
+        this.queueUpload(source);
+        const bytes = Engine.sourceBytes(source);
+        this.slideBytes.set(entry, bytes);
+        this.residentBytes += bytes;
+
+        const aspect = source.pixelWidth / Math.max(1, source.pixelHeight);
         const screen = this.app.renderer.screen;
         const screenAspect = screen.width / Math.max(1, screen.height);
         return {
-          entry, texture, url,
+          entry, texture, bitmap,
           panZoom: randPanZoom(aspect, screenAspect),
           fadeMag: randInRange(0.08, 0.14),
         };
       } catch (err) {
-        if (url) URL.revokeObjectURL(url);
+        bitmap?.close();
         this.failed.add(entry);
         this.cache.delete(entry);
         console.warn('[slideshow] failed to load (skipping):', entry.path, err);
@@ -837,6 +961,8 @@ void main(){ fragColor = vec4(0.0); }`;
   }
 
   destroy() {
+    if (this.uploadRaf) { cancelAnimationFrame(this.uploadRaf); this.uploadRaf = 0; }
+    this.uploadQueue.length = 0;
     this.app?.destroy(true, { children: true, texture: true });
   }
 }

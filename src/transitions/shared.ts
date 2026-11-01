@@ -1,6 +1,10 @@
 /**
  * Shared GLSL for shader-based transitions (fadeZoom, kenBurns).
  *
+ * Slide textures carry a full mip chain (see engine.loadSlide), so minification
+ * is trilinear rather than a single bilinear tap — which is what keeps fine
+ * detail from crawling while Ken Burns pans.
+ *
  * Two samplers:
  *   sampleSlide        — pure COVER. Zoom ≥ 1.0 expected. The image always
  *                        fills the viewport; no bars; one texture sample per
@@ -68,20 +72,38 @@ vec2 coverScale(float imgAspect) {
 /* ─── blurred backdrop (Plex / Jellyfin / Apple-TV pattern) ───────────── */
 
 /**
- * 18-tap golden-angle rotating-kernel blur over a cover-fit base, dimmed +
- * slightly saturated. Cheap, no second pass, looks good as an ambient halo.
+ * Golden-angle rotating-kernel blur over a cover-fit base, dimmed + slightly
+ * saturated. Cheap, no second pass, looks good as an ambient halo.
+ *
+ * Sampled from a small MIP LEVEL, with an explicit LOD. Two reasons:
+ *
+ *  1. Speed. This used to take 18 taps at full resolution, and for a portrait
+ *     photo on a landscape screen it covers 60-70 % of the frame (double that
+ *     mid-crossfade) — scattered 0.075-UV fetches across a multi-megabyte
+ *     surface, which is maximally texture-cache-hostile. Reading a ~64 px mip
+ *     instead keeps the whole working set in cache, so 8 taps now cost far less
+ *     than 18 did, and look smoother because each mip texel is already an
+ *     average.
+ *
+ *  2. Correctness. This is called from inside non-uniform control flow (the
+ *     photoAlpha test in sampleSlideContain). Implicit-derivative fetches are
+ *     undefined there, which was harmless only while textures had no mip chain.
+ *     textureLod takes no derivatives, so it is legal — keep it that way.
  */
 vec3 blurredBg(sampler2D tex, vec2 uv, float imgAspect) {
   vec2 base = (uv - 0.5) * coverScale(imgAspect) + 0.5;
+  // Pick the mip whose long edge is ~64 px, whatever the source resolution.
+  ivec2 ts = textureSize(tex, 0);
+  float lod = log2(max(1.0, float(max(ts.x, ts.y)) / 64.0));
   vec3 sum = vec3(0.0);
   const float radius = 0.075;
-  for (int i = 0; i < 18; i++) {
+  for (int i = 0; i < 8; i++) {
     float a = float(i) * 2.39996;
     float s = 0.35 + 0.65 * fract(float(i) * 0.61803);
     vec2 off = vec2(cos(a), sin(a)) * radius * s;
-    sum += texture(tex, clamp(base + off, 0.0, 1.0)).rgb;
+    sum += textureLod(tex, clamp(base + off, 0.0, 1.0), lod).rgb;
   }
-  vec3 col = sum / 18.0;
+  vec3 col = sum / 8.0;
   float luma = dot(col, vec3(0.2126, 0.7152, 0.0722));
   col = mix(vec3(luma), col, 1.20);
   return col * 0.50;
@@ -143,9 +165,12 @@ vec3 sampleSlideContain(
   float dist = max(outVec.x, outVec.y);
   float photoAlpha = 1.0 - smoothstep(0.0, 0.0025, dist);
 
-  vec3 photo = texture(tex, clamp(c, 0.0, 1.0)).rgb;
-  // Skip the 18-tap blur when fully inside the photo rect — GPUs branch
-  // well when adjacent pixels agree.
+  // Derivatives are taken from the UNCLAMPED coordinate. Clamping first would
+  // flatten them to zero outside the photo rect, and now that textures carry a
+  // mip chain that collapses the LOD and leaves a soft seam at the rect edge.
+  vec3 photo = textureGrad(tex, clamp(c, 0.0, 1.0), dFdx(c), dFdy(c)).rgb;
+  // Skip the blur when fully inside the photo rect — GPUs branch well when
+  // adjacent pixels agree.
   vec3 bg = photoAlpha >= 1.0 ? vec3(0.0) : blurredBg(tex, uv, imgAspect);
   return mix(bg, photo, photoAlpha);
 }

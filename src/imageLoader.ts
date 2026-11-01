@@ -67,3 +67,54 @@ export async function getImageBlob(file: File): Promise<Blob | null> {
   //    as permanently failed and skips it.
   return null;
 }
+
+/**
+ * Decode a Blob to an ImageBitmap no larger than (capW, capH) device pixels.
+ *
+ * Why downscale at all: Pixi's loader uploads photos at native resolution, so a
+ * 24 MP file becomes a ~96 MB GPU texture that is then minified into a ~1920 px
+ * quad with a single bilinear tap — which both wastes VRAM (14 cached slides
+ * could reach ~1.3 GB) and shimmers on fine detail while panning.
+ *
+ * The cap is applied PER AXIS, not to the long edge. Cover fit requires both
+ * axes to meet their cap, so this keeps panoramas wide and tall photos tall;
+ * capping the long edge alone would under-resolve a 3:1 panorama.
+ *
+ * No zoom headroom: at the tightest Ken Burns keyframe the photo is magnified by
+ * at most 1.30, which trilinear filtering makes imperceptible.
+ *
+ * Decode-then-resize (rather than probing the file header for dimensions and
+ * decoding straight to size) is deliberate: it is a few lines, works for every
+ * format the browser can decode, and the full-resolution bitmap is transient.
+ * `createImageBitmap` decodes off the main thread, so doing this ourselves
+ * instead of going through Pixi's worker costs nothing — that worker existed
+ * mainly to move a `fetch` off-thread, and we already hold the Blob.
+ */
+export async function decodeToBitmap(
+  blob: Blob,
+  capW: number,
+  capH: number,
+): Promise<ImageBitmap> {
+  const full = await createImageBitmap(blob, { premultiplyAlpha: 'premultiply' });
+  const k = Math.min(1, Math.max(capW / full.width, capH / full.height));
+  if (k >= 1) return full;
+
+  const w = Math.max(1, Math.round(full.width * k));
+  const h = Math.max(1, Math.round(full.height * k));
+  try {
+    const small = await createImageBitmap(full, {
+      resizeWidth: w,
+      resizeHeight: h,
+      resizeQuality: 'high',
+      premultiplyAlpha: 'premultiply',
+    });
+    // Some engines accept resize options and ignore them without erroring.
+    // Verify rather than trust; a full-resolution texture is a quality/memory
+    // regression, not a correctness one, so falling back is fine.
+    if (small.width !== w) { small.close(); return full; }
+    full.close();
+    return small;
+  } catch {
+    return full;
+  }
+}
