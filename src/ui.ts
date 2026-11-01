@@ -251,14 +251,31 @@ export class UI {
   private get helpOpen() { return !this.help.hidden; }
 
   private onKey(e: KeyboardEvent) {
-    if (e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement) return;
-
+    // Escape first, before the typing guard: the drawer's own button is
+    // labelled "Close · Esc", so it has to work from a focused field too.
     if (e.key === 'Escape') {
       if (this.helpOpen) { this.setHelp(false); return; }
       if (this.panelOpen) { this.setPanel(false); return; }
+      const doc = document as any;
       if (document.fullscreenElement) document.exitFullscreen();
+      else if (doc.webkitFullscreenElement) doc.webkitExitFullscreen?.();
       return;
     }
+
+    // Never hijack a browser or OS chord. Without this, Cmd+F goes fullscreen,
+    // Cmd+S opens the drawer behind the save dialog, and Alt+Left blocks Back.
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+
+    // Don't fire while typing, and don't steal keys from a focused control:
+    // Space and Enter must activate the button, not the shortcut.
+    const t = e.target as HTMLElement | null;
+    if (
+      t instanceof HTMLInputElement ||
+      t instanceof HTMLSelectElement ||
+      t instanceof HTMLTextAreaElement ||
+      t?.closest('button, [role="option"]')
+    ) return;
+
     if (e.key === '?') { e.preventDefault(); this.setHelp(!this.helpOpen); return; }
 
     switch (e.key) {
@@ -266,7 +283,9 @@ export class UI {
       case 'ArrowLeft': e.preventDefault(); this.b.onPrev(); break;
       case 'ArrowRight': e.preventDefault(); this.b.onNext(); break;
       case 'f': case 'F': this.b.onFullscreen(); break;
-      case 's': case 'S': this.setPanel(!this.panelOpen); break;
+      // Gated on hasFolder: the drawer sits behind the welcome screen, so
+      // opening it there looks like nothing happened while leaving it focusable.
+      case 's': case 'S': if (this.hasFolder) this.setPanel(!this.panelOpen); break;
     }
   }
 
