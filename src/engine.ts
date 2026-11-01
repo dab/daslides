@@ -19,6 +19,8 @@ import type { ImageEntry } from './folder.ts';
 interface LoadedSlide {
   entry: ImageEntry;
   texture: Texture;
+  /** Intrinsic aspect, kept so keyframes can be regenerated on resize. */
+  imgAspect: number;
   /**
    * The decoded bitmap backing `texture`. We own it: Pixi's
    * `TextureSource.destroy()` nulls `resource` but never calls `close()`, so
@@ -100,6 +102,8 @@ export class Engine {
 
   private currentTransition: TransitionDef = TRANSITIONS.fadeZoom;
   private fallbackTex = Texture.WHITE;
+  /** One Shader per shader transition, built on first use. */
+  private shaderCache = new Map<TransitionId, Shader>();
 
   private items: ImageEntry[] = [];
   private cache = new Map<ImageEntry, Promise<LoadedSlide>>();
@@ -255,6 +259,20 @@ void main(){ fragColor = vec4(0.0); }`;
     const h = this.app.renderer.screen.height;
     this.mesh.scale.set(w, h);
     this.uniforms.uniforms.uScreenAspect = w / Math.max(1, h);
+    // Ken-Burns keyframes are generated against the screen aspect at LOAD time
+    // and cached on the slide, so after a resize or orientation change every
+    // cached slide carries keyframes for the old aspect. For a portrait photo
+    // the vertical regime bakes an aspect-dependent zoom (heightFactor x
+    // scale.y), so stale keyframes mis-size its blurred side bars. Landscape
+    // keyframes (1.0 .. tightZ) are aspect-independent and unaffected.
+    //
+    // The currently-bound slide keeps its old keyframes for the rest of its
+    // dwell — rebinding mid-motion would snap the framing. It is re-bound on
+    // the next transition.
+    const screenAspect = w / Math.max(1, h);
+    for (const p of this.cache.values()) {
+      p.then(sl => { sl.panZoom = randPanZoom(sl.imgAspect, screenAspect); }).catch(() => {});
+    }
     this.vintageScene?.resize(w, h);
     if (this.vintageScene?.needsReseed && this.currentTransition.kind === 'scene') {
       this.vintageScene.needsReseed = false;
@@ -287,7 +305,16 @@ void main(){ fragColor = vec4(0.0); }`;
     const myToken = ++this.navToken;
 
     if (def.kind === 'shader') {
-      const newShader = this.makeShader(def.fragment);
+      // Cache per transition: setTransition used to build a fresh Shader every
+      // switch and never destroy the old one. The GLSL program itself is cached
+      // by Pixi, but the discarded Shader/bind-group objects leaked and the
+      // per-program uniform-location value cache reset, forcing a full uniform
+      // re-upload on the first frame after each switch.
+      let newShader = this.shaderCache.get(id);
+      if (!newShader) {
+        newShader = this.makeShader(def.fragment);
+        this.shaderCache.set(id, newShader);
+      }
       const oldRes = this.mesh.shader!.resources as any;
       const newRes = newShader.resources as any;
       if (oldRes.uTexA) newRes.uTexA = oldRes.uTexA;
@@ -409,13 +436,6 @@ void main(){ fragColor = vec4(0.0); }`;
     this.failed.clear();
     this.preloadWindow();
     this.startSlide();
-  }
-
-  syncOrder(items: ImageEntry[], newCursor: number) {
-    this.items = items.slice();
-    this.cursor = Math.max(0, Math.min(items.length - 1, newCursor));
-    this.preloadWindow();
-    this.onSlideChange?.(this.cursor);
   }
 
   setPlaying(p: boolean) {
@@ -570,9 +590,16 @@ void main(){ fragColor = vec4(0.0); }`;
   private preloadWindow() {
     if (this.items.length === 0) return;
     const keep = new Set<ImageEntry>();
-    // Scene mode looks 3 BACK for the bg pile; shader mode only 1 back.
-    const backN = this.currentTransition.kind === 'scene' ? 3 : 1;
-    for (let d = -backN; d <= 3; d++) {
+    // Urgency order, not index order: the current slide first, then forward
+    // (the next transition needs +1), then the backward history only the
+    // vintage pile uses. Every one of these competes for the same decode
+    // budget, so on a cold folder the order decides whether +1 is ready when
+    // the dwell expires. Scene mode looks 3 back for the bg pile; shader mode
+    // only 1 back.
+    const offsets = this.currentTransition.kind === 'scene'
+      ? [0, 1, 2, 3, -1, -2, -3]
+      : [0, 1, 2, 3, -1];
+    for (const d of offsets) {
       const idx = (this.cursor + d + this.items.length) % this.items.length;
       const entry = this.items[idx];
       if (this.failed.has(entry)) continue;     // skip permanently-bad files
@@ -750,7 +777,7 @@ void main(){ fragColor = vec4(0.0); }`;
         const screen = this.app.renderer.screen;
         const screenAspect = screen.width / Math.max(1, screen.height);
         return {
-          entry, texture, bitmap,
+          entry, texture, bitmap, imgAspect: aspect,
           panZoom: randPanZoom(aspect, screenAspect),
           fadeMag: randInRange(0.08, 0.14),
         };
@@ -991,6 +1018,7 @@ void main(){ fragColor = vec4(0.0); }`;
 
   destroy() {
     if (this.uploadRaf) { cancelAnimationFrame(this.uploadRaf); this.uploadRaf = 0; }
+    this.shaderCache.clear();
     this.uploadQueue.length = 0;
     this.app?.destroy(true, { children: true, texture: true });
   }
