@@ -342,7 +342,13 @@ export class VintageScene {
     const shadowOffset = 6;
     shadow.rect(x0 + shadowOffset, y0 + shadowOffset, totalW, totalH);
     shadow.fill({ color: 0x000000, alpha: 0.30 });
-    shadow.filters = [new BlurFilter({ strength: 14, quality: 4 })];
+    // quality 2 + half resolution instead of quality 4 at full: this blur is
+    // baked by cacheAsTexture() on the first frame after addPhoto — i.e. the
+    // transition's first frame — for every new card, so it was ~32 blur passes
+    // over card-sized render targets in one frame. A soft drop shadow has no
+    // high-frequency detail to lose, so the cheaper blur is visually equivalent
+    // at roughly an eighth of the cost.
+    shadow.filters = [new BlurFilter({ strength: 14, quality: 2, resolution: 0.5 })];
 
     // Warm off-white paper
     const paper = new Graphics();

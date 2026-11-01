@@ -631,13 +631,27 @@ void main(){ fragColor = vec4(0.0); }`;
   private async historySlides(n: number): Promise<LoadedSlide[]> {
     const out: LoadedSlide[] = [];
     const tried = new Set<ImageEntry>();
-    for (let d = 1; d < this.items.length && out.length < n; d++) {
-      const idx = (this.cursor - d + this.items.length) % this.items.length;
-      const entry = this.items[idx];
-      if (!entry || tried.has(entry) || this.failed.has(entry)) continue;
-      tried.add(entry);
-      try { out.push(await this.loadSlide(entry)); }
-      catch { /* logged + added to failed by loadSlide */ }
+    let d = 1;
+    while (out.length < n && d < this.items.length) {
+      // Collect the next batch of untried, non-failed candidates in recency
+      // order, then load them CONCURRENTLY. This used to await each load in
+      // turn, so a cold pile cost the sum of three decodes — easily longer than
+      // the fade it was supposed to be starting.
+      const batch: ImageEntry[] = [];
+      while (batch.length < n - out.length && d < this.items.length) {
+        const idx = (this.cursor - d + this.items.length) % this.items.length;
+        d++;
+        const entry = this.items[idx];
+        if (!entry || tried.has(entry) || this.failed.has(entry)) continue;
+        tried.add(entry);
+        batch.push(entry);
+      }
+      if (batch.length === 0) break;
+      // allSettled preserves order, so recency survives; rejections are already
+      // logged and recorded in `failed` by loadSlide.
+      for (const res of await Promise.allSettled(batch.map(e => this.loadSlide(e)))) {
+        if (res.status === 'fulfilled') out.push(res.value);
+      }
     }
     return out;
   }
@@ -866,11 +880,28 @@ void main(){ fragColor = vec4(0.0); }`;
       if (!incoming) { this.setPlaying(false); return; }
       if (this.navToken !== myToken) return;
 
-      // Set cursor BEFORE history lookup so historySlides() walks back from the
-      // incoming slide, not the outgoing one. Flip inTransition + sync() so the
-      // ticker runs (and the clock is unfrozen) for the animation even if we're
-      // paused — sync() returns us to the prior state once the transition ends.
+      // Set cursor BEFORE the history lookup so historySlides() walks back from
+      // the incoming slide, not the outgoing one.
       this.cursor = index;
+
+      // Scene mode must resolve its background pile BEFORE the transition clock
+      // starts. Previously transStart was stamped first and the pile was awaited
+      // after, so addPhoto received a `now` already in the past: cards appeared
+      // at non-zero alpha, and if the loads outlasted tDurSec they snapped
+      // straight to full opacity — a hard cut with no fade at all.
+      //
+      // The re-entrancy guard above is what makes this safe: tick() keeps
+      // seeing an expired dwell while we await here, and without it would start
+      // a fresh transition every frame.
+      let history: LoadedSlide[] = [];
+      if (this.currentTransition.kind === 'scene') {
+        history = await this.historySlides(3);
+        if (this.navToken !== myToken) return;
+      }
+
+      // Flip inTransition + sync() so the ticker runs (and the clock is
+      // unfrozen) for the animation even if we're paused — sync() returns us to
+      // the prior state once the transition ends.
       this.inTransition = true;
       this.sync();
       this.transStart = this.clock();
@@ -879,8 +910,6 @@ void main(){ fragColor = vec4(0.0); }`;
         this.bind('B', incoming);
         this.uniforms.uniforms.uDwellB = 0;
       } else {
-        const history = await this.historySlides(3);
-        if (this.navToken !== myToken) return;
         this.ensureVintageScene().addPhoto(
           {
             focal: { texture: incoming.texture, entry: incoming.entry },
