@@ -29,6 +29,15 @@ class VirtualList {
   private readonly rowHeight = 28;
   private readonly overscan = 6;
   private rafScheduled = false;
+  private selfScrolling = false;
+  /**
+   * Whether the drawer is open. Pushed in from setPanel() rather than probed
+   * from the DOM: the closed drawer is hidden with a transform, not display or
+   * visibility, so it stays laid out and clientHeight is never 0.
+   */
+  private visible = false;
+  /** Last time the user scrolled the list themselves. */
+  private lastUserScroll = 0;
 
   constructor(
     private listEl: HTMLDivElement,
@@ -37,7 +46,11 @@ class VirtualList {
   ) {
     this.container = listEl;
     this.spacer = spacerEl;
-    this.container.addEventListener('scroll', () => this.scheduleRender(), { passive: true });
+    this.container.addEventListener('scroll', () => {
+      // Any scroll we didn't cause ourselves counts as the user taking over.
+      if (!this.selfScrolling) this.lastUserScroll = performance.now();
+      this.scheduleRender();
+    }, { passive: true });
     new ResizeObserver(() => this.scheduleRender()).observe(this.container);
   }
 
@@ -60,19 +73,30 @@ class VirtualList {
     this.scrollIntoView(index);
   }
 
+  setVisible(v: boolean) {
+    this.visible = v;
+    if (v) this.scheduleRender();
+  }
+
   private scrollIntoView(i: number) {
     if (i < 0) return;
+    // Off-screen: don't touch scrollTop. Writing it fires a scroll event ->
+    // scheduleRender() -> a rAF that recycles rows, landing DOM work on the
+    // transition's second frame for something nobody can see.
+    if (!this.visible) return;
+    // Don't fight the user. If they scrolled recently they're looking for a
+    // photo; yanking the list back to the active row is hostile.
+    if (performance.now() - this.lastUserScroll < 2000) return;
     const viewH = this.container.clientHeight;
-    // Drawer closed -> the list has zero height, so `bot > sTop + 0` is always
-    // true and we would write scrollTop on every slide change. That write fires
-    // a scroll event -> scheduleRender() -> a rAF that recycles rows, landing
-    // DOM churn on the transition's second frame for no benefit.
     if (viewH === 0) return;
     const top = i * this.rowHeight;
     const bot = top + this.rowHeight;
     const sTop = this.container.scrollTop;
-    if (top < sTop) this.container.scrollTop = top;
-    else if (bot > sTop + viewH) this.container.scrollTop = bot - viewH;
+    const to = top < sTop ? top : bot > sTop + viewH ? bot - viewH : null;
+    if (to === null) return;
+    this.selfScrolling = true;
+    this.container.scrollTop = to;
+    this.selfScrolling = false;
   }
 
   private scheduleRender() {
@@ -85,7 +109,7 @@ class VirtualList {
   }
 
   private render() {
-    if (this.items.length === 0) return;
+    if (!this.visible || this.items.length === 0) return;
     const sTop = this.container.scrollTop;
     const viewH = this.container.clientHeight;
     const start = Math.max(0, Math.floor(sTop / this.rowHeight) - this.overscan);
@@ -295,17 +319,21 @@ export class UI {
     // from focus + assistive tech without the Chromium "aria-hidden on a focused
     // descendant" conflict.
     this.panel.inert = !open;
-    if (open) this.wake();
+    this.vlist.setVisible(open);
+    // Unconditionally, not just on open: wake() bails while the drawer is open,
+    // so only calling it there left the controls visible forever after a close.
+    this.wake();
   }
 
   private setHelp(open: boolean) {
     this.help.hidden = !open;
     if (open) {
       $<HTMLButtonElement>('help-close').focus();
-      this.wake();
-    } else {
+    } else if (this.hasFolder) {
+      // Only restore focus to a button the user can actually see.
       this.helpBtn.focus();
     }
+    this.wake();
   }
 
   private autoHideEnabled(): boolean { return this.autoHideBox.checked; }
