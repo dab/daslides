@@ -29,7 +29,7 @@ class VirtualList {
   private items: ImageEntry[] = [];
   private rows = new Map<number, HTMLDivElement>();
   private active = -1;
-  private readonly rowHeight = 28;
+  private readonly rowHeight = 44;   // iOS touch-target minimum
   private readonly overscan = 6;
   private rafScheduled = false;
   private selfScrolling = false;
@@ -41,6 +41,10 @@ class VirtualList {
   private visible = false;
   /** Last time the user scrolled the list themselves. */
   private lastUserScroll = 0;
+  /** Row the keyboard cursor is on (may be outside the rendered window). */
+  private focused = -1;
+  /** True once the arrow keys have been used, so playback stops moving focus. */
+  private keyboardNav = false;
 
   constructor(
     private listEl: HTMLDivElement,
@@ -49,6 +53,7 @@ class VirtualList {
   ) {
     this.container = listEl;
     this.spacer = spacerEl;
+    this.container.addEventListener('keydown', (e) => this.onListKey(e));
     this.container.addEventListener('scroll', () => {
       // Any scroll we didn't cause ourselves counts as the user taking over.
       if (!this.selfScrolling) this.lastUserScroll = performance.now();
@@ -63,7 +68,10 @@ class VirtualList {
     for (const row of this.rows.values()) row.remove();
     this.rows.clear();
     this.active = -1;
+    this.focused = -1;
+    this.keyboardNav = false;
     this.container.scrollTop = 0;
+    this.syncAria();
     this.scheduleRender();
   }
 
@@ -71,9 +79,55 @@ class VirtualList {
     if (this.active === index) return;
     const old = this.active;
     this.active = index;
-    if (old >= 0) this.rows.get(old)?.classList.remove('active');
-    this.rows.get(index)?.classList.add('active');
+    const oldRow = this.rows.get(old);
+    if (oldRow) {
+      oldRow.classList.remove('active');
+      oldRow.setAttribute('aria-selected', 'false');
+    }
+    const row = this.rows.get(index);
+    if (row) {
+      row.classList.add('active');
+      row.setAttribute('aria-selected', 'true');
+    }
+    // Follow playback with the focus marker too, unless the user has taken
+    // over with the arrow keys.
+    if (!this.keyboardNav) this.focused = index;
+    this.syncAria();
     this.scrollIntoView(index);
+  }
+
+  /**
+   * Move the keyboard cursor. The list is virtualized, so the focused row may
+   * not exist in the DOM — aria-activedescendant points at an id that render()
+   * assigns when the row scrolls into range, and the container keeps real DOM
+   * focus throughout.
+   */
+  moveFocus(delta: number | 'home' | 'end') {
+    if (this.items.length === 0) return;
+    const from = this.focused < 0 ? this.active : this.focused;
+    const to = delta === 'home' ? 0
+      : delta === 'end' ? this.items.length - 1
+      : Math.min(this.items.length - 1, Math.max(0, (from < 0 ? 0 : from) + delta));
+    this.keyboardNav = true;
+    this.rows.get(this.focused)?.classList.remove('focused');
+    this.focused = to;
+    // A deliberate move should scroll, even if the user scrolled a moment ago.
+    this.lastUserScroll = 0;
+    this.scrollIntoView(to);
+    this.render();
+    this.rows.get(to)?.classList.add('focused');
+    this.syncAria();
+  }
+
+  /** Jump to whichever row the keyboard cursor is on. */
+  activateFocused() {
+    if (this.focused >= 0) this.onJump(this.focused);
+  }
+
+  private syncAria() {
+    const id = this.focused >= 0 ? `vrow-${this.focused}` : '';
+    if (id) this.container.setAttribute('aria-activedescendant', id);
+    else this.container.removeAttribute('aria-activedescendant');
   }
 
   setVisible(v: boolean) {
@@ -100,6 +154,20 @@ class VirtualList {
     this.selfScrolling = true;
     this.container.scrollTop = to;
     this.selfScrolling = false;
+  }
+
+  private onListKey(e: KeyboardEvent) {
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    switch (e.key) {
+      case 'ArrowDown':  e.preventDefault(); e.stopPropagation(); this.moveFocus(1); break;
+      case 'ArrowUp':    e.preventDefault(); e.stopPropagation(); this.moveFocus(-1); break;
+      case 'PageDown':   e.preventDefault(); e.stopPropagation(); this.moveFocus(10); break;
+      case 'PageUp':     e.preventDefault(); e.stopPropagation(); this.moveFocus(-10); break;
+      case 'Home':       e.preventDefault(); e.stopPropagation(); this.moveFocus('home'); break;
+      case 'End':        e.preventDefault(); e.stopPropagation(); this.moveFocus('end'); break;
+      case 'Enter':
+      case ' ':          e.preventDefault(); e.stopPropagation(); this.activateFocused(); break;
+    }
   }
 
   private scheduleRender() {
@@ -139,7 +207,13 @@ class VirtualList {
     row.className = 'vlist-row';
     row.style.top = `${i * this.rowHeight}px`;
     row.style.height = `${this.rowHeight}px`;
+    // Rows are recycled, so every bit of state has to be re-applied here —
+    // the same reason `.active` is set below rather than only in setActive().
+    row.setAttribute('role', 'option');
+    row.id = `vrow-${i}`;
+    row.setAttribute('aria-selected', String(i === this.active));
     if (i === this.active) row.classList.add('active');
+    if (i === this.focused) row.classList.add('focused');
 
     const idx = document.createElement('span');
     idx.className = 'idx';
@@ -180,6 +254,8 @@ export class UI {
   private listCount = $<HTMLSpanElement>('list-count');
   private counter = $<HTMLSpanElement>('counter');
   private progressFill = $<HTMLDivElement>('progress-fill');
+  private controlsEl = $<HTMLElement>('controls');
+  private emptyEl = $<HTMLElement>('empty');
 
   private trSel = $<HTMLSelectElement>('transition');
   private dwellInp = $<HTMLInputElement>('dwell');
@@ -260,12 +336,15 @@ export class UI {
 
     window.addEventListener('keydown', (e) => this.onKey(e));
 
-    const onFsChange = () =>
+    const onFsChange = () => {
       this.body.classList.toggle('fullscreen',
         !!(document.fullscreenElement || (document as any).webkitFullscreenElement));
+      this.syncFullscreenLabel();
+    };
     document.addEventListener('fullscreenchange', onFsChange);
     document.addEventListener('webkitfullscreenchange', onFsChange);
 
+    this.syncFullscreenLabel();
     this.setupPwa();
 
     // Activity wakes the controls. pointerdown/touchstart are essential on
@@ -330,7 +409,15 @@ export class UI {
     // from focus + assistive tech without the Chromium "aria-hidden on a focused
     // descendant" conflict.
     this.panel.inert = !open;
+    this.settingsBtn.setAttribute('aria-expanded', String(open));
     this.vlist.setVisible(open);
+    // Match what setHelp already does: move focus in on open, hand it back on
+    // close. Without this, closing the drawer made `inert` destroy the focus and
+    // reset it to <body>.
+    if (open) $<HTMLButtonElement>('panel-toggle').focus();
+    else if (this.hasFolder && this.panel.contains(document.activeElement)) {
+      this.settingsBtn.focus();
+    }
     // Unconditionally, not just on open: wake() bails while the drawer is open,
     // so only calling it there left the controls visible forever after a close.
     this.wake();
@@ -338,6 +425,10 @@ export class UI {
 
   private setHelp(open: boolean) {
     this.help.hidden = !open;
+    // aria-modal only tells AT the dialog is modal; it doesn't stop Tab. Make
+    // everything behind it genuinely unreachable.
+    this.controlsEl.inert = open;
+    this.emptyEl.inert = open;
     if (open) {
       $<HTMLButtonElement>('help-close').focus();
     } else if (this.hasFolder) {
@@ -451,10 +542,18 @@ export class UI {
     }, 4200);
   }
 
+  private syncFullscreenLabel() {
+    const on = this.body.classList.contains('fullscreen');
+    this.fsBtn.setAttribute('aria-label', on ? 'Exit fullscreen' : 'Fullscreen');
+    this.fsBtn.setAttribute('aria-pressed', String(on));
+    this.fsBtn.title = on ? 'Exit fullscreen · F' : 'Fullscreen · F';
+  }
+
   setPlaying(playing: boolean) {
     this.playing = playing;
     this.body.classList.toggle('playing', playing);
     this.playBtn.setAttribute('aria-label', playing ? 'Pause' : 'Play');
+    this.playBtn.setAttribute('aria-pressed', String(playing));
     if (this.progressAnim) { if (playing) this.progressAnim.play(); else this.progressAnim.pause(); }
   }
 

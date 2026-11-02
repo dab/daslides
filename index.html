@@ -113,12 +113,12 @@
 
     <!-- ── Bottom control bar ──────────────────────────────────────── -->
     <div class="scrim" aria-hidden="true"></div>
-    <footer id="controls" class="controls" role="toolbar" aria-label="Playback controls">
+    <footer id="controls" class="controls" role="group" aria-label="Playback controls">
       <div class="progress" aria-hidden="true"><div id="progress-fill" class="progress__fill"></div></div>
 
       <div class="controls__bar">
         <div class="controls__meta">
-          <span id="counter" class="counter" aria-live="polite">—— / ——</span>
+          <span id="counter" class="counter">—— / ——</span>
           <span id="folder-name" class="folder-name">No folder</span>
         </div>
 
@@ -139,7 +139,7 @@
           <button id="shuffle" class="iconbtn" title="Shuffle" aria-label="Shuffle">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 4h4v4M4 20l16-16M16 20h4v-4M4 4l5 5m6 6 5 5"/></svg>
           </button>
-          <button id="settings-btn" class="iconbtn" title="Settings · S" aria-label="Settings" aria-haspopup="true">
+          <button id="settings-btn" class="iconbtn" title="Settings · S" aria-label="Settings" aria-haspopup="dialog" aria-expanded="false" aria-controls="panel">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M5 7h9M5 12h14M5 17h6"/><circle cx="17" cy="7" r="2.2"/><circle cx="14" cy="17" r="2.2"/></svg>
           </button>
           <button id="help-btn" class="iconbtn" title="Keyboard shortcuts · ?" aria-label="Keyboard shortcuts" aria-haspopup="dialog">
@@ -155,7 +155,7 @@
 
     <!-- ── Settings drawer ─────────────────────────────────────────── -->
     <div id="drawer-scrim" class="drawer-scrim" hidden></div>
-    <aside id="panel" class="panel" aria-label="Settings" inert>
+    <aside id="panel" class="panel" role="dialog" aria-label="Settings" inert>
       <header class="panel__head">
         <h2>Settings</h2>
         <button id="panel-toggle" class="iconbtn" title="Close · Esc" aria-label="Close settings">
@@ -200,7 +200,7 @@
             <span id="list-count">No images</span>
             <span class="muted small">click to jump</span>
           </div>
-          <div id="list" class="vlist"><div id="list-spacer" class="vlist-spacer"></div></div>
+          <div id="list" class="vlist" role="listbox" aria-label="Photos" tabindex="0"><div id="list-spacer" class="vlist-spacer"></div></div>
         </div>
       </div>
     </aside>
