@@ -4,6 +4,24 @@ import { entriesFromFileList, type ImageEntry } from './folder.ts';
 import type { TransitionId } from './transitions/index.ts';
 
 const stage = document.getElementById('stage') as HTMLDivElement;
+
+/**
+ * Register the service worker in production only. It makes the app installable
+ * (Chromium requires one before it will offer to install) and lets it open
+ * offline. Dev is left alone so there is no cache between you and a reload.
+ */
+// Tell the inline recovery script in index.html that we are past boot: from
+// here on a reload would cost the user their picked folder, not fix anything.
+(window as any).__daslidesBooted = true;
+try { sessionStorage.removeItem('reloaded-stale'); } catch {}
+
+if (import.meta.env.PROD && 'serviceWorker' in navigator) {
+  addEventListener('load', () => {
+    navigator.serviceWorker
+      .register(`${import.meta.env.BASE_URL}sw.js`, { scope: import.meta.env.BASE_URL })
+      .catch((err) => console.warn('[slideshow] service worker failed:', err));
+  });
+}
 const engine = new Engine();
 let items: ImageEntry[] = [];
 let initFailed = false;

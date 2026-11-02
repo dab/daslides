@@ -54,8 +54,13 @@
         var KEY = 'reloaded-stale';
         function recover() {
           if (sessionStorage.getItem(KEY)) return; // once only — no reload loops
+          if (window.__daslidesBooted) return;     // past boot, a reload only loses work
           sessionStorage.setItem(KEY, '1');
-          location.replace(location.pathname + '?r=' + Date.now());
+          // Preserve the query and hash: this used to drop them, silently
+          // discarding ?perf=1 and leaving ?r=<timestamp> in the URL forever.
+          var u = new URL(location.href);
+          u.searchParams.set('r', String(Date.now()));
+          location.replace(u.toString());
         }
         addEventListener('error', function (e) {
           // SCRIPT only — a 404'd JS chunk means stale HTML. NOT LINK: Brave
@@ -66,9 +71,15 @@
         }, true); // capture phase — resource load errors don't bubble
         addEventListener('unhandledrejection', function (e) {
           var m = String((e.reason && e.reason.message) || '');
-          if (m.indexOf('dynamically imported module') > -1) recover();
+          // Chrome: "Failed to fetch dynamically imported module".
+          // Firefox: "error loading dynamically imported module".
+          // Safari: "Importing a module script failed." — missed before.
+          if (/dynamically imported|module script failed/i.test(m)) recover();
         });
-        addEventListener('load', function () { sessionStorage.removeItem(KEY); });
+        // Deliberately NOT cleared on `load`. Clearing it there re-armed the
+        // recovery for the rest of the session, so deploying while someone was
+        // mid-slideshow bounced them through a reload that lost their folder —
+        // file handles can't be restored. main.ts clears it after a good boot.
       })();
     </script>
 
