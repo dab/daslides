@@ -204,6 +204,11 @@
         <div class="field field--toggles">
           <label class="toggle"><input type="checkbox" id="shuffle-on-load" checked /><span>Shuffle on load</span></label>
           <label class="toggle"><input type="checkbox" id="auto-hide" checked /><span>Auto-hide controls</span></label>
+          <!-- Only revealed when the page was opened with ?perf=1. -->
+          <label class="toggle" id="perf-row" hidden>
+            <input type="checkbox" id="perf-toggle" checked />
+            <span>Performance overlay</span>
+          </label>
         </div>
 
         <div class="field field--list">

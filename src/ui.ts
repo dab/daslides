@@ -1,4 +1,5 @@
 import { isIOS, isTouchPrimary, type ImageEntry } from './folder.ts';
+import { perfEnabled, perfSetVisible } from './perf.ts';
 
 export interface UIBindings {
   onFilesPicked: (list: FileList) => void;
@@ -261,6 +262,8 @@ export class UI {
   private dwellInp = $<HTMLInputElement>('dwell');
   private tdurInp = $<HTMLInputElement>('tdur');
   private autoHideBox = $<HTMLInputElement>('auto-hide');
+  private perfRow = $<HTMLLabelElement>('perf-row');
+  private perfBox = $<HTMLInputElement>('perf-toggle');
 
   private playBtn = $<HTMLButtonElement>('play');
   private prevBtn = $<HTMLButtonElement>('prev');
@@ -357,6 +360,17 @@ export class UI {
     this.panel.addEventListener('mouseenter', () => this.wake());
     this.panel.addEventListener('focusin', () => this.wake());
     this.autoHideBox.addEventListener('change', () => this.wake());
+
+    // The overlay is opt-in via ?perf=1; without the flag there is nothing to
+    // toggle, so the row stays hidden rather than offering a dead control.
+    if (perfEnabled) {
+      this.perfRow.hidden = false;
+      perfSetVisible(this.perfBox.checked);
+      this.perfBox.addEventListener('change', () => {
+        perfSetVisible(this.perfBox.checked);
+        this.wake();
+      });
+    }
 
     this.wake();
   }

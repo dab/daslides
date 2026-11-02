@@ -118,6 +118,14 @@ scripts/
   raw-version.sh                report installed Apple RAW Camera Support version
 ```
 
+## Measuring performance
+
+Open the app with `?perf=1` for an overlay showing frame time, the worst frame
+*inside* the last transition, per-slide decode and upload times, and texture
+memory. The settings drawer then gets a toggle to show or hide it, and clicking
+the overlay resets its worst-frame figures so you can compare a change without
+reloading.
+
 ## Privacy
 
 Photos are read with a local file input and decoded in the browser. Nothing is

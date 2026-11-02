@@ -32,6 +32,7 @@ let transitions = 0;
 const marks = new Map<string, string>();
 let statsFn: (() => Record<string, string | number>) | null = null;
 let el: HTMLPreElement | null = null;
+let visible = true;
 
 /** Call once per engine tick with real (not clock) time. */
 export function perfFrame(now: number): void {
@@ -67,6 +68,35 @@ export function perfMark(label: string, ms: number, note = ''): void {
   marks.set(label, `${ms.toFixed(1)}ms${note ? ' ' + note : ''}`);
 }
 
+/**
+ * Clear the latched worst-frame figures.
+ *
+ * `worst` and `IN-TRANS` are high-water marks, so one hitch while a folder is
+ * still decoding sticks there for the rest of the session and hides what the
+ * app is doing now. Being able to zero them is what makes the overlay usable
+ * for a before/after comparison without reloading.
+ */
+export function perfReset(): void {
+  worstMs = 0;
+  lastTransitionWorst = 0;
+  worstInTransition = 0;
+  transitions = 0;
+  marks.clear();
+  render();
+}
+
+/** Show or hide the overlay. Measurement keeps running either way. */
+export function perfSetVisible(v: boolean): void {
+  if (!ENABLED) return;
+  visible = v;
+  if (el) el.hidden = !v;
+  if (v) render();
+}
+
+export function perfVisible(): boolean {
+  return visible;
+}
+
 /** Register a snapshot callback and mount the overlay. */
 export function perfStats(fn: () => Record<string, string | number>): void {
   if (!ENABLED) return;
@@ -79,8 +109,13 @@ export function perfStats(fn: () => Record<string, string | number>): void {
     'font:11px/1.45 ui-monospace,SFMono-Regular,Menlo,monospace',
     'color:#e8e8e8', 'background:rgba(0,0,0,.72)',
     'border:1px solid rgba(255,255,255,.14)', 'border-radius:6px',
-    'pointer-events:none', 'white-space:pre', 'text-shadow:0 1px 2px #000',
+    'white-space:pre', 'text-shadow:0 1px 2px #000',
+    // Clickable, so the high-water marks can be zeroed without a reload.
+    'cursor:pointer', 'user-select:none',
   ].join(';');
+  el.title = 'Click to reset the worst-frame figures';
+  el.addEventListener('click', perfReset);
+  el.hidden = !visible;
   document.body.appendChild(el);
   // 4 Hz. Never per frame — the overlay must not be what it measures.
   setInterval(render, 250);
@@ -88,7 +123,7 @@ export function perfStats(fn: () => Record<string, string | number>): void {
 }
 
 function render(): void {
-  if (!el) return;
+  if (!el || !visible) return;
   const fps = frameMs > 0 ? 1000 / frameMs : 0;
   const rows: string[] = [
     `frame      ${frameMs.toFixed(1).padStart(6)}ms  (${fps.toFixed(0)} fps)`,

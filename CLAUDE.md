@@ -169,6 +169,14 @@ textureSource is null` from the batcher.
 (every entry point returns early; nothing mounts, no timers run). No keybinding
 — `space`, arrows, `f`, `s` and `?` are already taken by `ui.ts`.
 
+With the flag on, a **Performance overlay** toggle appears in the settings
+drawer; without it the row stays `hidden` rather than offering a dead control.
+Hiding the overlay only stops it drawing — measurement keeps running, so
+switching it back on shows live numbers rather than starting from scratch.
+Clicking the overlay zeroes the high-water marks (`worst`, `IN-TRANS`), which is
+what makes a before/after comparison possible without a reload — otherwise one
+hitch during the initial decode sticks there all session.
+
 The number to watch is **IN-TRANS**: the worst frame *inside* the last
 transition. A stall at a transition boundary is exactly what "it hangs before
 switching" looks like, and an average frame time hides it completely. Frame cost
