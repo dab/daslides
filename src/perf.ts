@@ -130,6 +130,7 @@ function render(): void {
     `worst      ${worstMs.toFixed(1).padStart(6)}ms  all-time`,
     `IN-TRANS   ${lastTransitionWorst.toFixed(1).padStart(6)}ms  worst frame, last of ${transitions}`,
   ];
+  rows.push(`build      v${__APP_VERSION__} ${__BUILD_ID__}`);
   for (const [k, v] of marks) rows.push(`${k.padEnd(10)} ${v}`);
   if (statsFn) {
     for (const [k, v] of Object.entries(statsFn())) rows.push(`${k.padEnd(10)} ${v}`);

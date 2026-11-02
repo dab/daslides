@@ -1,5 +1,23 @@
+import { execSync } from 'node:child_process';
 import { readdirSync, readFileSync } from 'node:fs';
 import { defineConfig, type Plugin } from 'vite';
+
+/**
+ * Identify the build. The commit is what actually tells you which code is live
+ * — useful because this is served from a CDN behind a service worker, so "did
+ * my deploy land?" is otherwise guesswork.
+ */
+function buildId(): string {
+  try {
+    const sha = execSync('git rev-parse --short HEAD', { stdio: ['ignore', 'pipe', 'ignore'] })
+      .toString().trim();
+    const dirty = execSync('git status --porcelain', { stdio: ['ignore', 'pipe', 'ignore'] })
+      .toString().trim().length > 0;
+    return dirty ? `${sha}+` : sha;
+  } catch {
+    return 'dev';   // not a git checkout (e.g. a source tarball)
+  }
+}
 
 /**
  * Emit the service worker with its cache version and precache list filled in,
@@ -51,6 +69,14 @@ export default defineConfig(({ mode }) => {
     base,
     server: { port: 5173 },
     build: { target: 'es2022' },
+    define: {
+      // Read package.json rather than npm_package_version, which is only set
+      // when vite is launched through an npm script.
+      __APP_VERSION__: JSON.stringify(
+        JSON.parse(readFileSync('package.json', 'utf8')).version ?? '0.0.0',
+      ),
+      __BUILD_ID__: JSON.stringify(buildId()),
+    },
     plugins: [serviceWorker(base)],
   };
 });

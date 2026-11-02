@@ -91,6 +91,11 @@ body.has-folder .empty { opacity: 0; visibility: hidden; pointer-events: none; }
   letter-spacing: 0.04em; margin: 16px 0 0; animation: rise 0.7s var(--ease) 0.24s both;
 }
 .empty .btn--primary { animation: rise 0.7s var(--ease) 0.18s both; }
+.empty__version {
+  margin: 2px 0 0; font-size: 11px; letter-spacing: 0.02em;
+  color: var(--muted-dim);
+  font-variant-numeric: tabular-nums;
+}
 .empty__credit {
   color: var(--muted-dim); font-size: 12px; margin: 4px 0 0;
   animation: rise 0.7s var(--ease) 0.3s both;

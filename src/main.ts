@@ -5,6 +5,11 @@ import type { TransitionId } from './transitions/index.ts';
 
 const stage = document.getElementById('stage') as HTMLDivElement;
 
+// Build identity, on the welcome card. Behind a CDN and a service worker,
+// "which code am I actually running?" is otherwise guesswork.
+const versionEl = document.getElementById('app-version');
+if (versionEl) versionEl.textContent = `v${__APP_VERSION__} · ${__BUILD_ID__}`;
+
 /**
  * Register the service worker in production only. It makes the app installable
  * (Chromium requires one before it will offer to install) and lets it open
