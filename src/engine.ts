@@ -116,9 +116,9 @@ export class Engine {
    */
   private failed = new Set<ImageEntry>();
   /**
-   * Cache budget: cursor window (5) + scene mode's pile (up to 5 cards + 1 bg
-   * = 6) with possible overlap. 14 gives generous headroom without unbounded
-   * memory growth, even on libraries with thousands of photos.
+   * Cache budget: the cursor window (5) plus the Vintage pile (a focal card
+   * plus 3-5 background cards, which can overlap the window). 14 leaves
+   * headroom without unbounded growth on libraries of thousands of photos.
    */
   private maxCache = 14;
   /**
@@ -384,7 +384,7 @@ void main(){ fragColor = vec4(0.0); }`;
     (async () => {
       const focal = await this.loadSlide(entry);
       if (this.navToken !== myToken) return;
-      const history = await this.historySlides(3);
+      const history = await this.historySlides(this.ensureVintageScene().bgSlots());
       if (this.navToken !== myToken) return;
       // Seeding, not transitioning: show the pile at once. A fade here would
       // never run if we are paused (the clock is frozen, so tick() can't raise
@@ -880,7 +880,7 @@ void main(){ fragColor = vec4(0.0); }`;
       this.uniforms.uniforms.uProgress = 0;
       this.uniforms.uniforms.uDwellA = 0;
     } else {
-      const history = await this.historySlides(3);
+      const history = await this.historySlides(this.ensureVintageScene().bgSlots());
       if (this.navToken !== myToken) return;
       // Same as reseedScene: this is a seed, so no fade.
       this.ensureVintageScene().addPhoto(
@@ -967,7 +967,7 @@ void main(){ fragColor = vec4(0.0); }`;
       // a fresh transition every frame.
       let history: LoadedSlide[] = [];
       if (this.currentTransition.kind === 'scene') {
-        history = await this.historySlides(3);
+        history = await this.historySlides(this.ensureVintageScene().bgSlots());
         if (this.navToken !== myToken) return;
       }
 

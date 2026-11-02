@@ -91,7 +91,9 @@ interface Camera {
   dur: number;
 }
 
-const BG_SLOTS = 3; // number of background prints behind focal
+/** Whole-pile camera zoom range. photoSize() budgets against CAM_SCALE_MAX. */
+const CAM_SCALE_MIN = 1.00;
+const CAM_SCALE_MAX = 1.22;
 
 /**
  * Shared drop-shadow texture, nine-sliced onto every card.
@@ -197,7 +199,7 @@ export class VintageScene {
    * Begin a new pile cycle.
    * - All existing cards start fading out (in place).
    * - A new focal card is created and fades in at slot 0.
-   * - Up to BG_SLOTS new bg cards are created using history textures, fading
+   * - Up to bgSlots() new bg cards are created using history textures, fading
    *   in at randomized slot poses behind the focal.
    * - The pile camera kicks off a new slow rotation + zoom-in ramp.
    *
@@ -228,11 +230,13 @@ export class VintageScene {
     const curRot = this.cardsLayer.rotation;
     const curScale = this.cardsLayer.scale.x;
 
-    // Zoom: 70 % of cycles zoom IN from current, 30 % pull back. Cap at 1.22.
-    const wantsZoomIn = curScale < 1.10 || Math.random() < 0.7;
-    const targetScale = wantsZoomIn
-      ? Math.min(1.22, curScale + rrange(0.07, 0.14))
-      : Math.max(1.00, curScale - rrange(0.07, 0.14));
+    // Ping-pong between a near band and a far band. The old version added a
+    // delta and clamped at the top, so once the scale reached ~1.08 the clamp
+    // produced scaleFrom === scaleTo and roughly seven cycles in ten had no
+    // zoom at all — only rotation and the per-card drift.
+    const targetScale = curScale < (CAM_SCALE_MIN + CAM_SCALE_MAX) / 2
+      ? rrange((CAM_SCALE_MIN + CAM_SCALE_MAX) / 2 + 0.02, CAM_SCALE_MAX)
+      : rrange(CAM_SCALE_MIN, (CAM_SCALE_MIN + CAM_SCALE_MAX) / 2 - 0.02);
 
     // Rotation: damp the current value 40 % toward 0, then add a kick.
     // Caps at ±0.105 rad (~±6°). Tends back to neutral over time.
@@ -265,11 +269,18 @@ export class VintageScene {
       c.destroyAtMs = now + fadeMs;
     }
 
-    // Build new bg cards FIRST (so we can z-order focal above them)
-    for (let i = 0; i < BG_SLOTS; i++) {
+    // Build new bg cards FIRST (so we can z-order focal above them), oldest
+    // first so the most recent photo ends up nearest the front — it used to be
+    // the other way round, with the oldest drawn on top.
+    const flip = rand() < 0.5 ? -1 : 1;
+    const placed: SlotPose[] = [];
+    const slots = this.bgSlots();
+    for (let i = slots - 1; i >= 0; i--) {
       const h = ctx.history[i];
-      if (!h) break;
-      const card = this.makeCard(h.texture, h.entry, this.bgSlotPose(i), now);
+      if (!h) continue;
+      const pose = this.bgSlotPose(i, flip, placed);
+      placed.push(pose);
+      const card = this.makeCard(h.texture, h.entry, pose, now);
       card.fadeFrom = 0;
       card.fadeTo = 1.0;
       card.fadeStart = now;
@@ -299,7 +310,9 @@ export class VintageScene {
     // past `dur` (paused, manual nav, etc.) the camera just keeps the final
     // pose rather than continuing to inflate.
     {
-      const t = Math.min(1, (now - this.camera.start) / Math.max(1, this.camera.dur));
+      // Clamped both ends: lerp doesn't clamp, so a `now` before the ramp
+      // started would extrapolate past the first keyframe.
+      const t = Math.min(1, Math.max(0, (now - this.camera.start) / Math.max(1, this.camera.dur)));
       const rot = lerp(this.camera.rotFrom, this.camera.rotTo, t);
       const scl = lerp(this.camera.scaleFrom, this.camera.scaleTo, t);
       this.cardsLayer.rotation = rot;
@@ -357,20 +370,42 @@ export class VintageScene {
     };
   }
 
-  /** Bg card pose — large offset, strong rotation, fills viewport space. */
-  private bgSlotPose(rank: number): SlotPose {
+  /**
+   * Bg card pose — offset and rotated so several of them fill the frame.
+   *
+   * Spread follows the viewport: on a tall screen the cards fan out vertically,
+   * on a wide one horizontally. `rank % 2` alone put two cards left and one
+   * right every single cycle, so the pile was permanently lopsided despite the
+   * comment claiming otherwise — the starting side is now random per cycle.
+   */
+  private bgSlotPose(rank: number, flip: number, placed: SlotPose[]): SlotPose {
+    const slots = this.bgSlots();
     const cx = this.screenW / 2;
     const cy = this.screenH / 2;
-    // Pick a side per rank so the pile feels balanced left/right
-    const side = (rank % 2 === 0) ? -1 : 1;
-    const offX = rrange(0.10, 0.25) * this.screenW * side;
-    const offY = rrange(-0.12, 0.12) * this.screenH;
-    return {
-      x: cx + offX,
-      y: cy + offY,
-      angle: (rand() - 0.5) * 0.55,       // ±~16°
-      scale: rrange(0.95, 1.05),
-    };
+    const tall = this.screenH > this.screenW;
+    const side = (rank % 2 === 0 ? -1 : 1) * flip;
+    // Push along the long axis, jitter across the short one.
+    // More cards -> push them further out, so they tile the long axis instead
+    // of stacking in the middle.
+    const reach = slots >= 4 ? 0.38 : 0.28;
+    const majorSpread = rrange(0.12, reach);
+    const minorSpread = rrange(-0.13, 0.13);
+    let pose: SlotPose = { x: cx, y: cy, angle: 0, scale: 1 };
+    // A few tries to avoid landing on top of an already-placed card, which
+    // fully occluded it and showed three photos instead of four.
+    for (let attempt = 0; attempt < 6; attempt++) {
+      const major = (attempt === 0 ? majorSpread : rrange(0.12, reach)) * side;
+      const minor = (attempt === 0 ? minorSpread : rrange(-0.13, 0.13));
+      pose = {
+        x: cx + (tall ? minor * this.screenW : major * this.screenW),
+        y: cy + (tall ? major * this.screenH : minor * this.screenH),
+        angle: (rand() - 0.5) * 0.55,     // ±~16°
+        scale: rrange(0.95, 1.05),
+      };
+      const minGap = Math.min(this.screenW, this.screenH) * 0.12;
+      if (placed.every(p => Math.hypot(p.x - pose.x, p.y - pose.y) >= minGap)) break;
+    }
+    return pose;
   }
 
   // ─── card construction ────────────────────────────────────────────────────
@@ -381,14 +416,45 @@ export class VintageScene {
    * roughly 88% of the corresponding axis — comfortably the user's 85–90%
    * target while leaving room for the paper border to remain on-screen.
    */
+  /** Paper mat width. Viewport-driven, so every card in a given frame matches. */
+  private borderPx(): number {
+    return Math.round(Math.min(this.screenW, this.screenH) * 0.045);
+  }
+
+  /**
+   * How many background prints to build this cycle.
+   *
+   * An elongated screen needs more of them: making each card big enough to
+   * cover a 21:9 frame on its own is impossible without cropping its mat, so
+   * coverage comes from the number of cards and their spread instead.
+   */
+  bgSlots(): number {
+    const ratio = Math.max(this.screenW, this.screenH) / Math.min(this.screenW, this.screenH);
+    return ratio < 2 ? 3 : ratio < 2.5 ? 4 : 5;
+  }
+
   private photoSize(texture: Texture): { w: number; h: number } {
     const aspect = texture.width / Math.max(1, texture.height);
-    const maxH = this.screenH * 0.80;
-    const maxW = this.screenW * 0.80;
-    let h = maxH;
-    let w = h * aspect;
-    if (w > maxW) { w = maxW; h = w / aspect; }
-    return { w, h };
+    const short = Math.min(this.screenW, this.screenH);
+    const long = Math.max(this.screenW, this.screenH);
+    const border = this.borderPx();
+
+    // Size so the card still fits at the camera's closest zoom, mat included.
+    // The old rule fitted inside 80 % of both axes against an assumed 1.12 cap
+    // that is really 1.22, so the focal card's mat was cropped most of the time.
+    const shortLimit = Math.max(120, short / CAM_SCALE_MAX - 2 * border);
+    const longLimit = Math.max(160, long / CAM_SCALE_MAX - 2 * border);
+
+    const ratio = Math.max(aspect, 1 / aspect);
+    let shortEdge = shortLimit;
+    let longEdge = shortEdge * ratio;
+    if (longEdge > longLimit) {
+      longEdge = longLimit;
+      shortEdge = longEdge / ratio;
+    }
+    return aspect >= 1
+      ? { w: longEdge, h: shortEdge }
+      : { w: shortEdge, h: longEdge };
   }
 
   private makeCard(
@@ -406,7 +472,7 @@ export class VintageScene {
     // so 4.5 % of viewport short edge ≈ 5.6 % of photo short edge — squarely
     // in the "this is obviously a paper print" range. Uniform across all
     // cards (driven by viewport, not per-card dimensions).
-    const border = Math.round(Math.min(this.screenW, this.screenH) * 0.045);
+    const border = this.borderPx();
     const totalW = photoW + 2 * border;
     const totalH = photoH + 2 * border;
     const x0 = -totalW / 2;
