@@ -165,7 +165,7 @@ textureSource is null` from the batcher.
 
 ## Perf overlay
 
-`src/perf.ts` is a dev-only overlay, inert unless the URL carries `?perf=1`
+`src/perf.ts` is an overlay that is inert unless the URL carries `?perf=1`
 (every entry point returns early; nothing mounts, no timers run). No keybinding
 — `space`, arrows, `f`, `s` and `?` are already taken by `ui.ts`.
 
@@ -205,13 +205,59 @@ accident. If you change this, it is a product decision, not a cleanup.
 
 ## File access
 
-`folder.ts` exports `pickDirectory()` (File System Access API) and `entriesFromFileList()` (fallback for Firefox/Safari). Both return `ImageEntry[]` with `getFile()` thunks — files are read lazily, never eagerly. Memory cost of "load a folder" is O(N) lightweight entry objects (~100 bytes each), not file contents.
+`folder.ts` exports `entriesFromFileList()` and `isTouchPrimary()`/`isIOS()`.
+**There is no `pickDirectory()` and no File System Access API** — picking is a
+native `<input webkitdirectory>` opened by a `<label for>`, which avoids the
+user-gesture pitfalls (Brave blocks the FSA picker; `showDirectoryPicker` after
+an `await` loses the gesture). This doc used to claim otherwise.
+
+`entriesFromFileList` returns `ImageEntry[]` with `getFile()` thunks — files are
+read lazily, never eagerly. Memory cost of "load a folder" is O(N) lightweight
+entry objects (~100 bytes each), not file contents.
+
+The extension list is **authoritative**; don't reintroduce a MIME-type check in
+front of it. `image/*` matches SVG (undecodable by `createImageBitmap`), ICO,
+and macOS `._NAME.ARW` AppleDouble sidecars, which share the real file's
+extension and doubled the photo count with unreadable 4 KB stubs.
 
 ## RAW / TIFF support
 
-`imageLoader.ts` resolves a `File` to a Blob the browser can render. For RAW (CR2/CR3, ARW, NEF, RAF, RW2, ORF, DNG) and TIFF, it dynamically imports `exifr` and pulls the embedded JPEG preview from `PreviewImage`, `JpgFromRaw`, `OtherImage`, or `ThumbnailImage` tags (modern cameras store full-size previews there). A heuristic — `byteLength > 16 KB` — distinguishes a real preview from a 160×120 EXIF thumbnail. Fall-throughs: tiny thumbnail → raw File handoff (Safari decodes baseline TIFF natively). Files that fail entirely are logged and skipped — `engine.loadSlide` catches rejection and `startSlide`/`beginTransition` short-circuit cleanly.
+`rawPreview.worker.ts` extracts the embedded JPEG preview off the main thread.
+`imageLoader.ts` dispatches to it and then decodes/downscales the result.
 
-To support pixel-accurate RAW decoding (color profiles, white balance, demosaicing), drop in a WASM LibRaw build and add it as a fallback when no preview is found — the existing `imageLoader.ts` shape supports this without engine changes.
+How the preview is found:
+
+- **TIFF-based** (CR2, ARW, NEF, ORF, RW2, DNG, TIFF): walk the IFD chain plus
+  SubIFD/ExifIFD links, collecting `StripOffsets`/`StripByteCounts` where
+  `Compression == 6` and the `ThumbnailOffset`/`Length` pair.
+- **Everything else** (CR3 is ISO-BMFF, RAF has a Fujifilm header): bounded scan
+  of the front of the file for `FFD8FF … FFD9`.
+
+Candidates are sorted by size and validated by their **SOF marker**, then the
+first usable one wins. That validation is load-bearing, not a nicety:
+
+- A CR2's sensor data is also a JPEG stream, but **SOF3 (lossless)** — no browser
+  can decode it. Filtering on `Compression == 6` alone does *not* exclude it.
+- An ARW's largest block is ~47 MB of **uncompressed** pixels.
+- Previews under 800 px wide are thumbnails; reject and skip the file.
+
+**Do not go back to exifr for this.** It was used here and never worked: the code
+asked for `PreviewImage`/`JpgFromRaw`/`OtherImage`, which are **ExifTool** tag
+names that exifr does not have. Unknown `pick` names make exifr disable every
+block and return `undefined` — silently — so every RAW fell through to the small
+IFD1 thumbnail. exifr also can't open CR3 or RAF at all (it dispatches on magic),
+and its `thumbnail()` only reads the first 64 KB, which is the real source of the
+"offset is outside the bounds of the DataView" errors.
+
+**EXIF orientation** must be carried separately for RAW. An extracted preview is
+a bare JPEG with no APP1/Exif segment, so `imageOrientation: 'from-image'` has
+nothing to read — the flag only exists in the parent file's IFD0. The worker
+returns it and `decodeToBitmap` applies it. Getting this wrong shows portrait
+photos sideways *and* mis-classifies them as landscape for Ken Burns.
+
+For pixel-accurate decoding (colour profiles, white balance, demosaicing) drop in
+a WASM LibRaw build as a fallback when no preview is found; the worker's shape
+supports it.
 
 ## Don'ts
 
@@ -221,6 +267,24 @@ To support pixel-accurate RAW decoding (color profiles, white balance, demosaici
 - Don't animate Vintage Prints card positions between cycles. User dislikes "moving afterwards" behavior. Crossfade only; slow sine drift is the only motion.
 - Don't add a sepia/grain/vignette filter to Vintage Prints. The macOS screensaver shows photos UNTOUCHED on paper prints.
 - Don't render 1500 DOM rows. Always virtualize.
+- Don't reintroduce `cacheAsTexture()` on Vintage cards. It allocates a
+  power-of-two render target per card (~33 MB at 2x) outside the engine's texture
+  budget, and sizes it from local bounds, which exclude filter padding — so it
+  also clipped the shadow's penumbra. Cards now share one pre-blurred
+  nine-sliced shadow and need no bake.
+- Don't destroy a Vintage card with `destroy(true)` or `destroy({children:true})`.
+  The first takes the engine-owned slide texture with it; the second leaks the
+  `GraphicsContext` and never destroys filters. Use
+  `{ children: true, context: true, texture: false }`.
+- Don't start Vintage cards at alpha 0 when *seeding* the pile. Seeding can
+  happen while paused, when the clock is frozen and `tick()` never runs, so the
+  fade never starts and the screen stays black. `addPhoto(..., instant)` exists
+  for this.
+- Don't probe the DOM to decide whether the photo list is visible. The closed
+  drawer is hidden with a `transform`, so it stays laid out and `clientHeight` is
+  never 0. `setPanel()` pushes the state in.
+- Don't put `aria-live` on anything that updates per slide — it makes a screen
+  reader announce every photo for as long as the slideshow runs.
 - Don't reintroduce `Assets` for slide textures. The engine owns them so it can control resolution, mipmaps and upload timing — see "Texture lifecycle".
 - Don't let a texture upload land on a transition frame. Keep `queueUpload()`'s one-per-frame, not-while-`inTransition` drain.
 - Don't force layout from `onSlideChange` — it fires at the instant a transition starts. (That is why the progress bar uses the Web Animations API instead of the `void offsetWidth` reflow trick.)

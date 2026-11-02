@@ -90,7 +90,7 @@ done < <(find "$abs_input" -type f \
 
 if [ "$total" -eq 0 ]; then
   echo "No RAW/TIFF files found under $abs_input"
-  exit 1
+  exit 0   # nothing to do is not a failure
 fi
 
 echo "Found $total file(s) to consider."
@@ -108,17 +108,20 @@ convert_one() {
 
   # sips failed — try LibRaw if available
   if [ "$HAS_DCRAW" = "1" ]; then
-    local tmp
-    tmp="$(mktemp -t rawconv).tiff"
+    # mktemp creates the file; append the extension and remove BOTH on the way
+    # out, or every fallback leaves a zero-byte temp behind forever.
+    local base tmp
+    base="$(mktemp -t rawconv)"
+    tmp="$base.tiff"
     if dcraw_emu -T -w -o 1 -q 3 -Z "$tmp" "$src" > /dev/null 2>&1 \
        && [ -f "$tmp" ]; then
       if sips -s format jpeg -s formatOptions best -Z "$MAX_DIM" \
              "$tmp" --out "$dst" > /dev/null 2>&1; then
-        rm -f "$tmp"
+        rm -f "$tmp" "$base"
         return 10  # success via fallback (distinct exit so we can count it)
       fi
     fi
-    rm -f "$tmp" 2>/dev/null || true
+    rm -f "$tmp" "$base" 2>/dev/null || true
   fi
   return 1
 }
@@ -126,7 +129,7 @@ convert_one() {
 i=0
 while IFS= read -r -d '' file; do
   i=$((i + 1))
-  rel="${file#$abs_input/}"
+  rel="${file#"$abs_input"/}"
   reldir="$(dirname "$rel")"
   base="$(basename "$rel")"
   stem="${base%.*}"

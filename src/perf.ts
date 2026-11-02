@@ -1,7 +1,8 @@
 /**
- * Dev-only performance overlay.
+ * Performance overlay, off by default.
  *
- * Inert unless the URL carries `?perf=1` — every entry point returns
+ * It ships in the production bundle on purpose — being able to add `?perf=1` on
+ * a real device is the point — but it is inert unless the URL carries it — every entry point returns
  * immediately, nothing is mounted, and no timers run. No keyboard shortcut: the
  * UI already binds space, arrows, f, s and ? (see ui.ts).
  *

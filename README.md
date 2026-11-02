@@ -1,6 +1,6 @@
 # daslides
 
-A private, fullscreen photo slideshow that runs entirely in your browser — point it at a folder and play. **Nothing is uploaded; your photos never leave your device.** Hardware-accelerated, handles any folder size, never crops your photos, and reads RAW + TIFF.
+A private, fullscreen photo slideshow that runs entirely in your browser — point it at a folder and play. **Your photos never leave your device** — they are read locally and never uploaded. Hardware-accelerated, handles any folder size, never crops your photos, and reads RAW + TIFF.
 
 **Live:** https://dab.github.io/daslides/
 
@@ -30,21 +30,38 @@ Fade with Zoom and Ken Burns use **cover fit** — the image always fills the vi
 | `Space` | play / pause |
 | `←` `→` | previous / next |
 | `F` | fullscreen |
-| `P` | hide / show side panel |
-| `Esc` | exit fullscreen |
+| `S` | hide / show side panel |
+| `?` | keyboard shortcuts |
+| `Esc` | close panel / exit fullscreen |
 
-The side panel has the transition picker, dwell + transition duration, a virtualized image list (click to jump), Shuffle, and Fullscreen.
+The bottom bar has play/pause, previous/next, shuffle, settings, shortcuts and
+fullscreen. The settings panel has the transition picker, dwell and fade
+duration, and a virtualized image list — click a row to jump, or focus the list
+and use the arrow keys.
 
 ## Folders
 
-- **Chrome / Edge / Opera 86+** — native folder picker via the File System Access API. Remembers your last location.
-- **Firefox / Safari** — falls back to a multi-file `webkitdirectory` input.
+Folders are picked with a native `<input webkitdirectory>`, which works the same
+in every desktop browser. There is no File System Access API involved, so
+nothing is remembered between visits — pick the folder again after a reload.
+Phones and tablets can't use a folder input at all, so they get a multi-select
+photo picker instead.
 
 Subfolders are walked recursively.
 
 Supported formats:
-- **Native**: jpg, png, webp, avif, heic, gif, bmp
-- **RAW + TIFF** (CR2, CR3, ARW, NEF, RAF, RW2, ORF, DNG, TIFF): the embedded JPEG preview is extracted via [exifr](https://github.com/MikeKovarik/exifr). Modern cameras embed full-size previews — quality is fine for slideshow display, and decoding is orders of magnitude faster than processing the raw pixels. If a RAW file has no embedded preview large enough to use, it's skipped with a console warning.
+- **Native**: jpg, png, webp, avif, gif, bmp. Also heic, but only in Safari —
+  no Chromium or Firefox build decodes it.
+- **RAW + TIFF** (CR2, CR3, ARW, NEF, RAF, RW2, ORF, DNG, TIFF): the embedded
+  JPEG preview is extracted in a worker. Cameras store a ready-made JPEG inside
+  the RAW — it's what the body shows on its own screen — so using it is far
+  faster than demosaicing the sensor data, and good enough for a slideshow.
+  Files with no preview of usable size are skipped.
+
+  Note the embedded preview is a *preview*: on Canon bodies it is typically
+  1536x1024, and on Sony around 1620x1080. That is plenty on a laptop and a
+  little soft on a 4K display, which is why converting ahead of time (below) is
+  still worth it for a large library you plan to show on a big screen.
 
 ## Converting RAW files ahead of time (recommended for big libraries)
 
@@ -82,8 +99,10 @@ src/
   main.ts                       wires UI ↔ engine
   engine.ts                     PixiJS app, texture cache, transition dispatch
   ui.ts                         side panel, virtualized list, keyboard
-  folder.ts                     directory picker + image filtering
-  imageLoader.ts                RAW/TIFF preview extraction (exifr)
+  folder.ts                     file enumeration + image filtering
+  imageLoader.ts                decode + downscale; dispatches RAW to the worker
+  rawPreview.worker.ts          embedded JPEG preview extraction (off-thread)
+  perf.ts                       ?perf=1 overlay
   wakeLock.ts                   prevents OS screensaver / display sleep
   scenes/
     vintageScene.ts             paper-print scene graph
@@ -99,6 +118,16 @@ scripts/
   raw-version.sh                report installed Apple RAW Camera Support version
 ```
 
+## Privacy
+
+Photos are read with a local file input and decoded in the browser. Nothing is
+uploaded, and there is no analytics, no telemetry and no backend.
+
+One third-party request remains: the two webfonts come from Google Fonts, so
+loading the page tells Google your IP and user agent. The font stack falls back
+to system fonts if that request is blocked, and the app itself works offline
+once installed.
+
 ## Stack
 
-Vite + TypeScript + PixiJS v8 (WebGL2). No framework, no UI library. ~280 KB bundle, ~90 KB gzipped.
+Vite + TypeScript + PixiJS v8 (WebGL2). No framework, no UI library, no runtime dependencies. Initial payload 394 KB raw, 116 KB gzipped.

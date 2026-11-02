@@ -160,8 +160,10 @@ body.has-folder .scrim { opacity: 1; }
 
 .controls {
   position: fixed; left: 50%; bottom: calc(22px + env(safe-area-inset-bottom, 0px)); z-index: 16;
-  transform: translateX(-50%);
-  width: min(720px, calc(100vw - 32px));
+  /* Inset on every axis, not just the bottom — in iPhone landscape the bar
+     otherwise slides under the notch and the rounded corners. */
+  width: min(720px, calc(100vw - 32px
+    - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px)));
   background: var(--glass);
   backdrop-filter: blur(26px) saturate(150%);
   -webkit-backdrop-filter: blur(26px) saturate(150%);

@@ -180,7 +180,7 @@ class VirtualList {
   }
 
   private render() {
-    if (!this.visible || this.items.length === 0) return;
+    if (!this.visible || this.items.length === 0) return;   // nothing to lay out
     const sTop = this.container.scrollTop;
     const viewH = this.container.clientHeight;
     const start = Math.max(0, Math.floor(sTop / this.rowHeight) - this.overscan);
