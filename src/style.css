@@ -291,6 +291,10 @@ select:hover, input[type="number"]:hover { background: rgba(255, 255, 255, 0.06)
 select:focus-visible, input:focus-visible { border-color: var(--accent); }
 
 .toggle { display: flex; align-items: center; gap: 9px; font-size: 13.5px; cursor: pointer; user-select: none; }
+/* `display: flex` above would otherwise beat the UA's `[hidden] { display:none }`,
+   because author rules win over UA rules whatever the specificity. Same reason
+   `.help[hidden]` exists further down. */
+.toggle[hidden] { display: none; }
 .toggle input { accent-color: var(--accent); width: 16px; height: 16px; margin: 0; cursor: pointer; }
 
 .list-head {
@@ -399,17 +403,13 @@ body.idle { cursor: none; }
   *, *::before, *::after { animation-duration: 0.001ms !important; transition-duration: 0.001ms !important; }
 }
 
-/* The pickers are <label for> elements, which are not focusable — so the
-   keyboard focus ring belongs on the hidden input it points at, drawn on the
-   label. Without this the app's primary button had no visible focus state. */
-.visually-hidden:focus-visible + .btn,
-.visually-hidden:focus-visible + .linkbtn,
-label.btn:has(> .visually-hidden:focus-visible) {
-  outline: 2px solid var(--accent);
-  outline-offset: 3px;
-}
-#pick-fallback:focus-visible ~ .empty .empty__card #empty-folder,
-#pick-photos:focus-visible ~ .empty .empty__card #empty-photos {
+/* The pickers are <label for> elements, which aren't focusable, and the inputs
+   they point at live at the end of <body> — never a sibling or child of the
+   label. No selector can express "style this label while that input has focus"
+   across arbitrary document positions, which is why the three selector groups
+   that used to be here never matched anything. ui.ts mirrors the input's focus
+   onto the label as a class instead. */
+.focus-ring {
   outline: 2px solid var(--accent);
   outline-offset: 3px;
 }

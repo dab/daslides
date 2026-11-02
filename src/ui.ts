@@ -312,6 +312,22 @@ export class UI {
     this.fallback.addEventListener('change', onChange(this.fallback));
     this.photosInput.addEventListener('change', onChange(this.photosInput));
 
+    // Mirror each input's keyboard focus onto the label(s) that point at it, so
+    // the pickers have a visible focus ring. CSS can't do this: the labels are
+    // neither siblings nor children of the inputs, which sit at the end of the
+    // document. Matching :focus-visible keeps the ring off mouse clicks.
+    for (const input of [this.fallback, this.photosInput]) {
+      const labels = [...document.querySelectorAll<HTMLElement>(`label[for="${input.id}"]`)];
+      input.addEventListener('focus', () => {
+        if (input.matches(':focus-visible')) {
+          for (const l of labels) l.classList.add('focus-ring');
+        }
+      });
+      input.addEventListener('blur', () => {
+        for (const l of labels) l.classList.remove('focus-ring');
+      });
+    }
+
     this.playBtn.addEventListener('click', () => b.onPlayToggle());
     this.prevBtn.addEventListener('click', () => b.onPrev());
     this.nextBtn.addEventListener('click', () => b.onNext());
@@ -361,8 +377,13 @@ export class UI {
     this.panel.addEventListener('focusin', () => this.wake());
     this.autoHideBox.addEventListener('change', () => this.wake());
 
-    // The overlay is opt-in via ?perf=1; without the flag there is nothing to
-    // toggle, so the row stays hidden rather than offering a dead control.
+    // The overlay is opt-in via ?perf=1. Without the flag, DELETE the row rather
+    // than hiding it: the `hidden` attribute works through the UA rule
+    // `[hidden] { display: none }`, which any author `display` beats — and
+    // `.toggle` sets `display: flex`. So the row stayed on screen with no
+    // listener attached, which is a control that looks live and does nothing.
+    // A row that isn't in the DOM can't come back as a dead control, whatever
+    // happens to the stylesheet later.
     if (perfEnabled) {
       this.perfRow.hidden = false;
       perfSetVisible(this.perfBox.checked);
@@ -370,6 +391,8 @@ export class UI {
         perfSetVisible(this.perfBox.checked);
         this.wake();
       });
+    } else {
+      this.perfRow.remove();
     }
 
     this.wake();
