@@ -137,6 +137,8 @@ export class Engine {
   private transitionPending = false;
   /** Latch so the "nothing loads" message is reported once per folder. */
   private gaveUp = false;
+  /** Latch for the one-time canvas fade-in. */
+  private revealed = false;
   /** Decoded-but-not-yet-uploaded texture sources; see queueUpload(). */
   private uploadQueue: TextureSource[] = [];
   private uploadRaf = 0;
@@ -364,6 +366,7 @@ void main(){ fragColor = vec4(0.0); }`;
           this.uniforms.uniforms.uDwellA = 0;
           this.slideStart = this.clock();
           this.sync();
+          this.reveal();
         }).catch(() => {});
       }
     } else {
@@ -401,6 +404,7 @@ void main(){ fragColor = vec4(0.0); }`;
       );
       this.slideStart = this.clock();
       this.sync();
+      this.reveal();
     })();
   }
 
@@ -899,6 +903,20 @@ void main(){ fragColor = vec4(0.0); }`;
     this.onSlideChange?.(this.cursor);
     this.preloadWindow();
     this.sync();
+    this.reveal();
+  }
+
+  /**
+   * Fade the canvas up the first time a slide is on it.
+   *
+   * Every slide but the first gets a crossfade; the first one was an instant
+   * cut from black. Doing it in CSS keeps it out of the shader and the engine's
+   * state — there is nothing to cross-fade *from* on the first frame.
+   */
+  private reveal() {
+    if (this.revealed) return;
+    this.revealed = true;
+    this.app.canvas.classList.add('is-ready');
   }
 
   /** Bind a loaded slide to shader sampler A or B with its motion params. */

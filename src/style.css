@@ -414,3 +414,12 @@ label.btn:has(> .visually-hidden:focus-visible) {
   outline: 2px solid var(--accent);
   outline-offset: -2px;
 }
+
+/* The renderer's canvas starts hidden and fades up once the first photo is
+   bound, so the app doesn't cut in from black while every later slide gets a
+   crossfade. engine.reveal() adds the class exactly once. */
+#stage canvas {
+  opacity: 0;
+  transition: opacity 0.6s var(--ease);
+}
+#stage canvas.is-ready { opacity: 1; }
