@@ -8,6 +8,11 @@ import {
   UniformGroup,
   type TextureSource,
 } from 'pixi.js';
+// Despite the name, this is what lets Pixi run WITHOUT eval: it swaps the
+// shader/uniform sync functions Pixi would generate with `new Function` for
+// static ones. The site's CSP (src/_headers) forbids eval, so without it the
+// renderer fails to start.
+import 'pixi.js/unsafe-eval';
 import { TRANSITIONS, type TransitionDef, type TransitionId } from './transitions/index.ts';
 import { VERTEX } from './transitions/shared.ts';
 import { VintageScene } from './scenes/vintageScene.ts';

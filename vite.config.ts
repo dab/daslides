@@ -1,5 +1,6 @@
+import { createHash } from 'node:crypto';
 import { execSync } from 'node:child_process';
-import { readdirSync, readFileSync } from 'node:fs';
+import { readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { defineConfig, type Plugin } from 'vite';
 
 /**
@@ -70,13 +71,30 @@ function serviceWorker(base: string): Plugin {
   };
 }
 
-// GitHub Pages serves this project site from /daslides/ — set the production
-// base accordingly so built asset URLs resolve. Local dev stays at root.
-// Keyed on `mode`, not `command`: vite resolves `preview` with command 'serve',
-// so keying on command served the built output at / while dist/index.html
-// pointed at /daslides/, and every asset 404'd.
-export default defineConfig(({ mode }) => {
-  const base = mode === 'production' ? '/daslides/' : '/';
+/**
+ * Write dist/_headers for Cloudflare from src/_headers. The CSP allows inline
+ * scripts only by hash, and the hashes are taken from the BUILT index.html, so
+ * editing the inline recovery script can never leave it blocked.
+ */
+function headers(): Plugin {
+  return {
+    name: 'cloudflare-headers',
+    apply: 'build',
+    closeBundle() {
+      const html = readFileSync('dist/index.html', 'utf8');
+      // Executable inline scripts only: JSON-LD is data and CSP ignores it.
+      const inline = /<script(?![^>]*\bsrc=)(?![^>]*application\/ld\+json)[^>]*>([\s\S]*?)<\/script>/g;
+      const hashes = [...html.matchAll(inline)]
+        .map((m) => `'sha256-${createHash('sha256').update(m[1]).digest('base64')}'`);
+      const source = readFileSync('src/_headers', 'utf8').replaceAll('__SCRIPT_HASHES__', hashes.join(' '));
+      writeFileSync('dist/_headers', source);
+    },
+  };
+}
+
+const base = '/';
+
+export default defineConfig(() => {
   return {
     base,
     server: { port: 5173 },
@@ -90,6 +108,6 @@ export default defineConfig(({ mode }) => {
       __BUILD_ID__: JSON.stringify(buildId()),
       __SAMPLE_SLIDES__: JSON.stringify(sampleSlides()),
     },
-    plugins: [serviceWorker(base)],
+    plugins: [serviceWorker(base), headers()],
   };
 });
