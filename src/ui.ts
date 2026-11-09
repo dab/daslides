@@ -234,6 +234,40 @@ class VirtualList {
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 
 // Must match the min/max attributes on #dwell and #tdur in index.html.
+const PREFS_KEY = 'daslides:prefs';
+const PREF_IDS = ['transition', 'dwell', 'tdur', 'shuffle-on-load', 'auto-hide'];
+
+/**
+ * Restore the drawer settings from the last visit and save them on every change.
+ * Must run before anything reads these controls. Storage can throw (private
+ * mode, blocked site data), in which case the HTML defaults stand.
+ */
+function persistPrefs(): void {
+  const els = PREF_IDS.map((id) => $<HTMLInputElement | HTMLSelectElement>(id));
+  const isBox = (el: HTMLElement): el is HTMLInputElement =>
+    el instanceof HTMLInputElement && el.type === 'checkbox';
+
+  let saved: Record<string, unknown> = {};
+  try { saved = JSON.parse(localStorage.getItem(PREFS_KEY) ?? '{}') ?? {}; } catch {}
+
+  for (const el of els) {
+    const v = saved[el.id];
+    if (isBox(el)) {
+      if (typeof v === 'boolean') el.checked = v;
+    } else if (typeof v === 'string') {
+      // A transition removed in a later version must not leave the picker blank.
+      if (el instanceof HTMLSelectElement && ![...el.options].some((o) => o.value === v)) continue;
+      el.value = v;
+    }
+  }
+
+  const save = () => {
+    const prefs = Object.fromEntries(els.map((el) => [el.id, isBox(el) ? el.checked : el.value]));
+    try { localStorage.setItem(PREFS_KEY, JSON.stringify(prefs)); } catch {}
+  };
+  for (const el of els) el.addEventListener('change', save);
+}
+
 const DWELL_MIN = 2, DWELL_MAX = 60;
 const TDUR_MIN = 0.5, TDUR_MAX = 10;
 
@@ -287,6 +321,7 @@ export class UI {
 
   constructor(private b: UIBindings) {
     this.vlist = new VirtualList($('list'), $('list-spacer'), (i) => {
+    persistPrefs();
       b.onJump(i);
       this.setPanel(false); // jumping is a "go look at it" action — get out of the way
     });

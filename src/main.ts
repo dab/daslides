@@ -87,7 +87,7 @@ const ready = (async () => {
   } catch (err) {
     throw new Error('init-failed', { cause: err });
   }
-  // Browsers persist <select>/<input> values across reloads — sync the engine
+  // The UI restored the saved settings into these controls — sync the engine
   // to what the user actually sees before any folder loads.
   const trSel    = document.getElementById('transition') as HTMLSelectElement;
   const dwellInp = document.getElementById('dwell') as HTMLInputElement;
@@ -118,7 +118,7 @@ async function loadFiles(name: string, files: ImageEntry[]) {
   await ready;
   if (initFailed) return;
   // "Shuffle on load" — Fisher–Yates the items so playback doesn't always start
-  // at file #1. Browsers persist the checkbox state across reloads.
+  // at file #1.
   const shuffleOnLoad = (document.getElementById('shuffle-on-load') as HTMLInputElement)?.checked;
   if (shuffleOnLoad && files.length > 1) {
     for (let i = files.length - 1; i > 0; i--) {
