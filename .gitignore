@@ -5,6 +5,9 @@ node_modules/
 dist/
 tsconfig.tsbuildinfo
 
+# Cloudflare local state
+.wrangler/
+
 # Vite cache
 .vite/
 vite.config.ts.timestamp-*.mjs

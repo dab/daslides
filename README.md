@@ -7,7 +7,7 @@
 <p align="center">
   Your photo folders, as a proper slideshow. In the browser, on your machine, nothing uploaded.
   <br><br>
-  <a href="https://dab.github.io/daslides/"><b>→ Open daslides</b></a>
+  <a href="https://daslides.app/"><b>→ Open daslides</b></a>
 </p>
 
 ---
@@ -78,7 +78,8 @@ npm run dev
 ```
 
 Needs Node 22.12 or newer. `npm run build` produces a static `dist/` you can
-host anywhere.
+host anywhere. daslides.app is served by Cloudflare, which builds every push to
+`main`; `wrangler.jsonc` and `dist/_headers` (from `src/_headers`) configure it.
 
 Built on WebGL2 with PixiJS, which is the only dependency — no framework, no UI
 library. Add `?perf=1` for a frame-timing overlay if you're curious how it holds

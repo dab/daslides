@@ -277,6 +277,23 @@ For pixel-accurate decoding (colour profiles, white balance, demosaicing) drop i
 a WASM LibRaw build as a fallback when no preview is found; the worker's shape
 supports it.
 
+## Hosting + CSP
+
+daslides.app is a Cloudflare Worker serving `dist/` as static assets
+(`wrangler.jsonc`); Cloudflare builds every push to `main`. The base path is `/`.
+
+Headers come from `src/_headers`, written to `dist/_headers` by the
+`headers()` plugin in `vite.config.ts`. The CSP is strict (`'self'` only, no
+eval, no inline styles); inline scripts are allowed by sha256 hashes computed
+from the **built** `index.html`, so editing the stale-cache recovery script
+needs no manual hash update. Anything that adds a third-party origin, a `blob:`
+worker or WASM (`'wasm-unsafe-eval'`) must extend the policy there.
+
+`import 'pixi.js/unsafe-eval'` in `engine.ts` is **required** — despite its
+name it makes Pixi run *without* eval. Remove it and the renderer fails to start
+on the live site while still working in `npm run dev` (no CSP there). Test CSP
+changes with `npm run build && npx wrangler dev`, which applies `_headers`.
+
 ## Don'ts
 
 - Don't switch shader transitions away from COVER fit for landscape photos. The image must fill the viewport (full width OR full height accordingly), no empty space, no bars, no stretching. They've asked for this multiple times. (Portrait photos in Ken Burns are the deliberate exception — see "Fit / vertical photos".)
