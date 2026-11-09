@@ -77,3 +77,63 @@ export function entriesFromFileList(
   files.sort((a, b) => naturalSort(a.path, b.path));
   return { name: root || fallbackName, files };
 }
+
+/** The bundled sample photos, fetched one at a time as the slideshow reaches them. */
+export function sampleEntries(): ImageEntry[] {
+  return __SAMPLE_SLIDES__.map((name) => ({
+    name,
+    path: name,
+    getFile: async () => {
+      const res = await fetch(`${import.meta.env.BASE_URL}slides/${name}`);
+      if (!res.ok) throw new Error(`sample ${name}: HTTP ${res.status}`);
+      return new File([await res.blob()], name);
+    },
+  }));
+}
+
+/**
+ * Collect the entries of a drop. Must be called synchronously inside the `drop`
+ * handler — the DataTransfer is emptied as soon as the event returns.
+ */
+export function droppedEntries(dt: DataTransfer): FileSystemEntry[] {
+  return Array.from(dt.items)
+    .map((item) => item.webkitGetAsEntry())
+    .filter((e): e is FileSystemEntry => e !== null);
+}
+
+/**
+ * Walk dropped folders and files into ImageEntries. Only names are listed;
+ * each file is opened on demand, as with a picked folder.
+ */
+export async function entriesFromDrop(
+  roots: FileSystemEntry[],
+  fallbackName = 'Dropped photos',
+): Promise<{ name: string; files: ImageEntry[] }> {
+  const files: ImageEntry[] = [];
+
+  const walk = async (entry: FileSystemEntry): Promise<void> => {
+    if (entry.isFile) {
+      if (!isImage(entry.name)) return;
+      const fileEntry = entry as FileSystemFileEntry;
+      files.push({
+        name: entry.name,
+        path: entry.fullPath.replace(/^\//, ''),
+        getFile: () => new Promise<File>((res, rej) => fileEntry.file(res, rej)),
+      });
+      return;
+    }
+    if (!entry.isDirectory) return;
+    const reader = (entry as FileSystemDirectoryEntry).createReader();
+    // readEntries returns at most ~100 entries per call; read until empty.
+    for (;;) {
+      const batch = await new Promise<FileSystemEntry[]>((res, rej) => reader.readEntries(res, rej));
+      if (batch.length === 0) break;
+      await Promise.all(batch.map(walk));
+    }
+  };
+
+  await Promise.all(roots.map(walk));
+  files.sort((a, b) => naturalSort(a.path, b.path));
+  const name = roots.length === 1 && roots[0].isDirectory ? roots[0].name : fallbackName;
+  return { name, files };
+}

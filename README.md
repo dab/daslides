@@ -16,7 +16,8 @@ Point it at a folder and it plays: full screen, smooth, hardware-accelerated.
 No account, no upload, no setup. Your photos are read straight off your disk and
 never leave it.
 
-Pick a folder, press **F**, walk away.
+Pick a folder (or drop one on the page), press **F**, walk away. No photos to
+hand? Watch the sample slideshow.
 
 ## Three ways to watch
 
@@ -63,12 +64,11 @@ Subfolders are included. Thousands of photos are fine.
 
 ## Private by default
 
-There is no backend. No analytics, no telemetry, no accounts. Photos are read
-locally and decoded in your browser.
+There is no backend. No analytics, no telemetry, no accounts, no third-party
+requests — even the fonts are served with the app. Photos are read locally and
+decoded in your browser.
 
-One caveat, stated plainly: the two webfonts load from Google Fonts, so opening
-the page tells Google your IP and browser. Everything else is yours. Install it
-to your home screen and it runs offline, fonts and all.
+Install it to your home screen and it runs offline.
 
 ## Run it yourself
 
@@ -84,4 +84,6 @@ Built on WebGL2 with PixiJS, which is the only dependency — no framework, no U
 library. Add `?perf=1` for a frame-timing overlay if you're curious how it holds
 up. Notes for anyone poking at the internals are in [CLAUDE.md](CLAUDE.md).
 
-Made by [Dima Belitsky](https://github.com/dab).
+Made by [Dima Belitsky](https://github.com/dab). The code is [MIT licensed](LICENSE);
+the sample photos in `public/slides` are © Dima Belitsky under
+[CC BY 4.0](public/slides/LICENSE.txt) — share them freely, with credit.

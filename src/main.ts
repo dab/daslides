@@ -1,6 +1,6 @@
 import { Engine } from './engine.ts';
 import { UI, WEBGL2_MESSAGE } from './ui.ts';
-import { entriesFromFileList, type ImageEntry } from './folder.ts';
+import { entriesFromDrop, entriesFromFileList, sampleEntries, type ImageEntry } from './folder.ts';
 import type { TransitionId } from './transitions/index.ts';
 
 const stage = document.getElementById('stage') as HTMLDivElement;
@@ -8,7 +8,7 @@ const stage = document.getElementById('stage') as HTMLDivElement;
 // Build identity, on the welcome card. Behind a CDN and a service worker,
 // "which code am I actually running?" is otherwise guesswork.
 const versionEl = document.getElementById('app-version');
-if (versionEl) versionEl.textContent = `v${__APP_VERSION__} · ${__BUILD_ID__}`;
+if (versionEl) versionEl.textContent = `v${__APP_VERSION__} (${__BUILD_ID__})`;
 
 /**
  * Register the service worker in production only. It makes the app installable
@@ -41,6 +41,16 @@ const ui = new UI({
   onFilesPicked: (list) => {
     const { name, files } = entriesFromFileList(list, 'Selected photos');
     loadFiles(name, files);
+  },
+  onSample: () => loadFiles('Sample photos by Dima Belitsky', sampleEntries()),
+  onDropped: async (entries) => {
+    try {
+      const { name, files } = await entriesFromDrop(entries);
+      loadFiles(name, files);
+    } catch (err) {
+      console.error('[slideshow] reading the dropped folder failed:', err);
+      ui.toast('That folder could not be read. Try Choose folder instead.');
+    }
   },
   onPlayToggle: () => engine.togglePlay(),
   onPrev: () => engine.prev(),
@@ -87,7 +97,7 @@ const ready = (async () => {
   } catch (err) {
     throw new Error('init-failed', { cause: err });
   }
-  // Browsers persist <select>/<input> values across reloads — sync the engine
+  // The UI restored the saved settings into these controls — sync the engine
   // to what the user actually sees before any folder loads.
   const trSel    = document.getElementById('transition') as HTMLSelectElement;
   const dwellInp = document.getElementById('dwell') as HTMLInputElement;
@@ -118,7 +128,7 @@ async function loadFiles(name: string, files: ImageEntry[]) {
   await ready;
   if (initFailed) return;
   // "Shuffle on load" — Fisher–Yates the items so playback doesn't always start
-  // at file #1. Browsers persist the checkbox state across reloads.
+  // at file #1.
   const shuffleOnLoad = (document.getElementById('shuffle-on-load') as HTMLInputElement)?.checked;
   if (shuffleOnLoad && files.length > 1) {
     for (let i = files.length - 1; i > 0; i--) {

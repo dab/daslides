@@ -20,6 +20,18 @@ function buildId(): string {
 }
 
 /**
+ * File names of the sample photos in public/slides. They are fetched one at a
+ * time as the slideshow reaches them, so they are deliberately not precached.
+ */
+function sampleSlides(): string[] {
+  try {
+    return readdirSync('public/slides').filter((f) => /\.(jpe?g|png|webp|avif)$/i.test(f)).sort();
+  } catch {
+    return [];
+  }
+}
+
+/**
  * Emit the service worker with its cache version and precache list filled in,
  * so the hashed filenames don't have to be maintained by hand.
  *
@@ -76,6 +88,7 @@ export default defineConfig(({ mode }) => {
         JSON.parse(readFileSync('package.json', 'utf8')).version ?? '0.0.0',
       ),
       __BUILD_ID__: JSON.stringify(buildId()),
+      __SAMPLE_SLIDES__: JSON.stringify(sampleSlides()),
     },
     plugins: [serviceWorker(base)],
   };

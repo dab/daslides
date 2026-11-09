@@ -1,8 +1,10 @@
-import { isIOS, isTouchPrimary, type ImageEntry } from './folder.ts';
+import { droppedEntries, isIOS, isTouchPrimary, type ImageEntry } from './folder.ts';
 import { perfEnabled, perfSetVisible } from './perf.ts';
 
 export interface UIBindings {
   onFilesPicked: (list: FileList) => void;
+  onDropped: (entries: FileSystemEntry[]) => void;
+  onSample: () => void;
   onPlayToggle: () => void;
   onPrev: () => void;
   onNext: () => void;
@@ -233,6 +235,40 @@ class VirtualList {
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 
+const PREFS_KEY = 'daslides:prefs';
+const PREF_IDS = ['transition', 'dwell', 'tdur', 'shuffle-on-load', 'auto-hide'];
+
+/**
+ * Restore the drawer settings from the last visit and save them on every change.
+ * Must run before anything reads these controls. Storage can throw (private
+ * mode, blocked site data), in which case the HTML defaults stand.
+ */
+function persistPrefs(): void {
+  const els = PREF_IDS.map((id) => $<HTMLInputElement | HTMLSelectElement>(id));
+  const isBox = (el: HTMLElement): el is HTMLInputElement =>
+    el instanceof HTMLInputElement && el.type === 'checkbox';
+
+  let saved: Record<string, unknown> = {};
+  try { saved = JSON.parse(localStorage.getItem(PREFS_KEY) ?? '{}') ?? {}; } catch {}
+
+  for (const el of els) {
+    const v = saved[el.id];
+    if (isBox(el)) {
+      if (typeof v === 'boolean') el.checked = v;
+    } else if (typeof v === 'string') {
+      // A transition removed in a later version must not leave the picker blank.
+      if (el instanceof HTMLSelectElement && ![...el.options].some((o) => o.value === v)) continue;
+      el.value = v;
+    }
+  }
+
+  const save = () => {
+    const prefs = Object.fromEntries(els.map((el) => [el.id, isBox(el) ? el.checked : el.value]));
+    try { localStorage.setItem(PREFS_KEY, JSON.stringify(prefs)); } catch {}
+  };
+  for (const el of els) el.addEventListener('change', save);
+}
+
 // Must match the min/max attributes on #dwell and #tdur in index.html.
 const DWELL_MIN = 2, DWELL_MAX = 60;
 const TDUR_MIN = 0.5, TDUR_MAX = 10;
@@ -245,6 +281,7 @@ export class UI {
   private help = $<HTMLElement>('help');
 
   private emptyPhotos = $<HTMLLabelElement>('empty-photos');
+  private sampleBtn = $<HTMLButtonElement>('empty-sample');
   private fallback = $<HTMLInputElement>('pick-fallback');
   private photosInput = $<HTMLInputElement>('pick-photos');
   private toastEl = $<HTMLDivElement>('toast');
@@ -286,6 +323,7 @@ export class UI {
   private isIOS = isIOS();
 
   constructor(private b: UIBindings) {
+    persistPrefs();
     this.vlist = new VirtualList($('list'), $('list-spacer'), (i) => {
       b.onJump(i);
       this.setPanel(false); // jumping is a "go look at it" action — get out of the way
@@ -328,6 +366,9 @@ export class UI {
       });
     }
 
+    if (__SAMPLE_SLIDES__.length) this.sampleBtn.addEventListener('click', () => b.onSample());
+    else this.sampleBtn.remove();
+
     this.playBtn.addEventListener('click', () => b.onPlayToggle());
     this.prevBtn.addEventListener('click', () => b.onPrev());
     this.nextBtn.addEventListener('click', () => b.onNext());
@@ -365,6 +406,7 @@ export class UI {
 
     this.syncFullscreenLabel();
     this.setupPwa();
+    this.setupDrop();
 
     // Activity wakes the controls. pointerdown/touchstart are essential on
     // touch devices (no mousemove) — without them the controls can never be
@@ -497,6 +539,32 @@ export class UI {
 
   private autoHideEnabled(): boolean { return this.autoHideBox.checked; }
 
+  /** The whole window accepts a dropped folder; `body.dragging` lights up the welcome frame. */
+  private setupDrop() {
+    let depth = 0;
+    const hasFiles = (e: DragEvent) => !!e.dataTransfer?.types.includes('Files');
+    const setDragging = (on: boolean) => this.body.classList.toggle('dragging', on);
+    window.addEventListener('dragenter', (e) => {
+      if (hasFiles(e)) { depth++; setDragging(true); }
+    });
+    window.addEventListener('dragleave', (e) => {
+      if (hasFiles(e) && --depth <= 0) { depth = 0; setDragging(false); }
+    });
+    window.addEventListener('dragover', (e) => {
+      if (!hasFiles(e)) return;
+      e.preventDefault();
+      e.dataTransfer!.dropEffect = 'copy';
+    });
+    window.addEventListener('drop', (e) => {
+      if (!hasFiles(e)) return;
+      e.preventDefault();
+      depth = 0;
+      setDragging(false);
+      const entries = droppedEntries(e.dataTransfer!);
+      if (entries.length) this.b.onDropped(entries);
+    });
+  }
+
   private wake() {
     this.body.classList.remove('idle');
     clearTimeout(this.idleTimer);
@@ -601,7 +669,7 @@ export class UI {
   showFatal(msg: string) {
     const sub = document.querySelector('.empty__sub');
     if (sub) sub.textContent = msg;
-    for (const id of ['empty-folder', 'empty-photos', 'pick-folder', 'pick-photos-btn']) {
+    for (const id of ['empty-folder', 'empty-photos', 'empty-drop', 'empty-sample', 'pick-folder', 'pick-photos-btn']) {
       const el = document.getElementById(id);
       if (el) el.style.display = 'none';
     }

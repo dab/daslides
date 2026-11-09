@@ -191,6 +191,11 @@ queue has been broken.
 
 ## UI
 
+Drawer settings (transition, dwell, fade, shuffle on load, auto-hide) persist in
+`localStorage` under `daslides:prefs`. `persistPrefs()` restores them into the
+controls at the very top of the `UI` constructor — before `commitNumber` and
+before `main.ts` syncs the engine from the DOM — so nothing else needs to know.
+
 `src/ui.ts` contains a small `VirtualList` — Map<index, row> of currently-rendered rows, absolute-positioned by `index × rowHeight`. Recycle on scroll, debounced via `requestAnimationFrame`. `setActive` is O(1). No external virtualization library.
 
 ## Fit / vertical photos
@@ -218,6 +223,11 @@ accident. If you change this, it is a product decision, not a cleanup.
 native `<input webkitdirectory>` opened by a `<label for>`, which avoids the
 user-gesture pitfalls (Brave blocks the FSA picker; `showDirectoryPicker` after
 an `await` loses the gesture). This doc used to claim otherwise.
+
+Dropping a folder anywhere on the window also works: `droppedEntries()` must
+run synchronously inside the `drop` handler (the `DataTransfer` is emptied when
+it returns), then `entriesFromDrop()` walks the entries. `readEntries` returns
+at most ~100 entries per call, so it is read until empty.
 
 `entriesFromFileList` returns `ImageEntry[]` with `getFile()` thunks — files are
 read lazily, never eagerly. Memory cost of "load a folder" is O(N) lightweight
