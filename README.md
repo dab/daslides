@@ -84,4 +84,4 @@ Built on WebGL2 with PixiJS, which is the only dependency — no framework, no U
 library. Add `?perf=1` for a frame-timing overlay if you're curious how it holds
 up. Notes for anyone poking at the internals are in [CLAUDE.md](CLAUDE.md).
 
-Made by [Dima Belitsky](https://github.com/dab).
+Made by [Dima Belitsky](https://github.com/dab). [MIT licensed](LICENSE).
