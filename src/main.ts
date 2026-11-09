@@ -1,6 +1,6 @@
 import { Engine } from './engine.ts';
 import { UI, WEBGL2_MESSAGE } from './ui.ts';
-import { entriesFromDrop, entriesFromFileList, type ImageEntry } from './folder.ts';
+import { entriesFromDrop, entriesFromFileList, sampleEntries, type ImageEntry } from './folder.ts';
 import type { TransitionId } from './transitions/index.ts';
 
 const stage = document.getElementById('stage') as HTMLDivElement;
@@ -42,6 +42,7 @@ const ui = new UI({
     const { name, files } = entriesFromFileList(list, 'Selected photos');
     loadFiles(name, files);
   },
+  onSample: () => loadFiles('Sample photos by Dima Belitsky', sampleEntries()),
   onDropped: async (entries) => {
     try {
       const { name, files } = await entriesFromDrop(entries);

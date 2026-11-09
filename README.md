@@ -16,7 +16,8 @@ Point it at a folder and it plays: full screen, smooth, hardware-accelerated.
 No account, no upload, no setup. Your photos are read straight off your disk and
 never leave it.
 
-Pick a folder (or drop one on the page), press **F**, walk away.
+Pick a folder (or drop one on the page), press **F**, walk away. No photos to
+hand? Watch the sample slideshow.
 
 ## Three ways to watch
 
@@ -83,4 +84,6 @@ Built on WebGL2 with PixiJS, which is the only dependency — no framework, no U
 library. Add `?perf=1` for a frame-timing overlay if you're curious how it holds
 up. Notes for anyone poking at the internals are in [CLAUDE.md](CLAUDE.md).
 
-Made by [Dima Belitsky](https://github.com/dab). [MIT licensed](LICENSE).
+Made by [Dima Belitsky](https://github.com/dab). The code is [MIT licensed](LICENSE);
+the sample photos in `public/slides` are © Dima Belitsky under
+[CC BY 4.0](public/slides/LICENSE.txt) — share them freely, with credit.

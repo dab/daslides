@@ -4,6 +4,7 @@ import { perfEnabled, perfSetVisible } from './perf.ts';
 export interface UIBindings {
   onFilesPicked: (list: FileList) => void;
   onDropped: (entries: FileSystemEntry[]) => void;
+  onSample: () => void;
   onPlayToggle: () => void;
   onPrev: () => void;
   onNext: () => void;
@@ -280,6 +281,7 @@ export class UI {
   private help = $<HTMLElement>('help');
 
   private emptyPhotos = $<HTMLLabelElement>('empty-photos');
+  private sampleBtn = $<HTMLButtonElement>('empty-sample');
   private fallback = $<HTMLInputElement>('pick-fallback');
   private photosInput = $<HTMLInputElement>('pick-photos');
   private toastEl = $<HTMLDivElement>('toast');
@@ -363,6 +365,9 @@ export class UI {
         for (const l of labels) l.classList.remove('focus-ring');
       });
     }
+
+    if (__SAMPLE_SLIDES__.length) this.sampleBtn.addEventListener('click', () => b.onSample());
+    else this.sampleBtn.remove();
 
     this.playBtn.addEventListener('click', () => b.onPlayToggle());
     this.prevBtn.addEventListener('click', () => b.onPrev());
@@ -664,7 +669,7 @@ export class UI {
   showFatal(msg: string) {
     const sub = document.querySelector('.empty__sub');
     if (sub) sub.textContent = msg;
-    for (const id of ['empty-folder', 'empty-photos', 'empty-drop', 'pick-folder', 'pick-photos-btn']) {
+    for (const id of ['empty-folder', 'empty-photos', 'empty-drop', 'empty-sample', 'pick-folder', 'pick-photos-btn']) {
       const el = document.getElementById(id);
       if (el) el.style.display = 'none';
     }

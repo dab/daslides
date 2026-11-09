@@ -78,6 +78,19 @@ export function entriesFromFileList(
   return { name: root || fallbackName, files };
 }
 
+/** The bundled sample photos, fetched one at a time as the slideshow reaches them. */
+export function sampleEntries(): ImageEntry[] {
+  return __SAMPLE_SLIDES__.map((name) => ({
+    name,
+    path: name,
+    getFile: async () => {
+      const res = await fetch(`${import.meta.env.BASE_URL}slides/${name}`);
+      if (!res.ok) throw new Error(`sample ${name}: HTTP ${res.status}`);
+      return new File([await res.blob()], name);
+    },
+  }));
+}
+
 /**
  * Collect the entries of a drop. Must be called synchronously inside the `drop`
  * handler — the DataTransfer is emptied as soon as the event returns.
