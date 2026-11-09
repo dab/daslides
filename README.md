@@ -63,12 +63,11 @@ Subfolders are included. Thousands of photos are fine.
 
 ## Private by default
 
-There is no backend. No analytics, no telemetry, no accounts. Photos are read
-locally and decoded in your browser.
+There is no backend. No analytics, no telemetry, no accounts, no third-party
+requests — even the fonts are served with the app. Photos are read locally and
+decoded in your browser.
 
-One caveat, stated plainly: the two webfonts load from Google Fonts, so opening
-the page tells Google your IP and browser. Everything else is yours. Install it
-to your home screen and it runs offline, fonts and all.
+Install it to your home screen and it runs offline.
 
 ## Run it yourself
 

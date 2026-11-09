@@ -1,3 +1,6 @@
+@import '@fontsource-variable/hanken-grotesk';
+@import '@fontsource-variable/geist-mono';
+
 :root {
   color-scheme: dark;
 
@@ -26,8 +29,8 @@
 
   --ease: cubic-bezier(0.22, 0.61, 0.36, 1);
 
-  --font-ui: "Hanken Grotesk", -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
-  --font-mono: "Geist Mono", ui-monospace, "SF Mono", "JetBrains Mono", Menlo, monospace;
+  --font-ui: "Hanken Grotesk Variable", -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+  --font-mono: "Geist Mono Variable", ui-monospace, "SF Mono", "JetBrains Mono", Menlo, monospace;
 
   font-family: var(--font-ui);
   -webkit-font-smoothing: antialiased;
