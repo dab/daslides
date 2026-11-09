@@ -16,7 +16,7 @@ Point it at a folder and it plays: full screen, smooth, hardware-accelerated.
 No account, no upload, no setup. Your photos are read straight off your disk and
 never leave it.
 
-Pick a folder, press **F**, walk away.
+Pick a folder (or drop one on the page), press **F**, walk away.
 
 ## Three ways to watch
 

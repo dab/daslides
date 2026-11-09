@@ -224,6 +224,11 @@ native `<input webkitdirectory>` opened by a `<label for>`, which avoids the
 user-gesture pitfalls (Brave blocks the FSA picker; `showDirectoryPicker` after
 an `await` loses the gesture). This doc used to claim otherwise.
 
+Dropping a folder anywhere on the window also works: `droppedEntries()` must
+run synchronously inside the `drop` handler (the `DataTransfer` is emptied when
+it returns), then `entriesFromDrop()` walks the entries. `readEntries` returns
+at most ~100 entries per call, so it is read until empty.
+
 `entriesFromFileList` returns `ImageEntry[]` with `getFile()` thunks — files are
 read lazily, never eagerly. Memory cost of "load a folder" is O(N) lightweight
 entry objects (~100 bytes each), not file contents.

@@ -98,22 +98,56 @@
 
     <!-- ── Empty state ─────────────────────────────────────────────── -->
     <section id="empty" class="empty">
-      <div class="empty__card">
-        <svg class="empty__mark" viewBox="0 0 48 48" fill="none" aria-hidden="true">
-          <circle cx="24" cy="24" r="21" stroke="currentColor" stroke-width="1.5" />
-          <path d="M24 3v21M44 33 24 24M33 44 24 24M4 33l20-9M15 4l9 20" stroke="currentColor" stroke-width="1.5" />
-          <circle cx="24" cy="24" r="5.5" fill="currentColor" />
-        </svg>
-        <h1 class="empty__title">daslides</h1>
-        <p class="empty__sub">A private, local photo slideshow.<br />Point it at a folder — your photos never leave your device.</p>
-        <label for="pick-fallback" id="empty-folder" class="btn btn--primary">Choose folder…</label>
-        <label for="pick-photos" id="empty-photos" class="linkbtn">or select photos</label>
-        <p class="empty__formats">JPEG · PNG · HEIC · WebP · AVIF · RAW · TIFF</p>
-        <p class="empty__credit">
-          Made by <a href="https://github.com/dab" target="_blank" rel="noopener">Dima Belitsky</a>
-          · <a href="https://github.com/dab/daslides" target="_blank" rel="noopener">Source on GitHub</a>
-        </p>
-        <p class="empty__version" id="app-version"></p>
+      <div class="welcome">
+        <div class="welcome__text">
+          <p class="wordmark">
+            <svg class="wordmark__mark" viewBox="0 0 48 48" fill="none" aria-hidden="true">
+              <circle cx="24" cy="24" r="21" stroke="currentColor" stroke-width="2" />
+              <path d="M24 3v21M44 33 24 24M33 44 24 24M4 33l20-9M15 4l9 20" stroke="currentColor" stroke-width="2" />
+              <circle cx="24" cy="24" r="5.5" fill="currentColor" />
+            </svg>
+            daslides
+          </p>
+          <h1 class="welcome__title">Your photographs, presented properly.</h1>
+          <p class="welcome__lede empty__sub">A full-screen slideshow for a folder of photos on your computer. Nothing is uploaded: it all happens in your browser.</p>
+        </div>
+
+        <dl class="facts">
+          <div>
+            <dt>Camera RAW, no converting</dt>
+            <dd>Canon, Sony, Nikon, Fujifilm, Panasonic, Olympus and DNG files play straight from the folder.</dd>
+          </div>
+          <div>
+            <dt>Never leaves your machine</dt>
+            <dd>No upload, no account, no tracking. Install it and it works offline.</dd>
+          </div>
+          <div>
+            <dt>Three ways to watch</dt>
+            <dd>A slow Ken Burns pan, a calm crossfade, or prints stacked on a table.</dd>
+          </div>
+        </dl>
+
+        <figure class="print">
+          <div class="print__mat">
+            <div class="print__window">
+              <label for="pick-fallback" id="empty-folder" class="btn btn--primary">Choose folder…</label>
+              <p class="print__drop" id="empty-drop">or drop a folder here</p>
+              <label for="pick-photos" id="empty-photos" class="linkbtn">Select photos instead</label>
+            </div>
+          </div>
+          <figcaption class="print__caption">
+            Reads JPEG, PNG, WebP, AVIF, GIF, TIFF, HEIC in Safari, and RAW (CR2, CR3, ARW, NEF, RAF, RW2, ORF, DNG). Subfolders are included.
+            <span class="print__keys">Once it plays, press F for full screen.</span>
+          </figcaption>
+        </figure>
+
+        <footer class="welcome__foot">
+          <p>
+            Made by <a href="https://github.com/dab" target="_blank" rel="noopener">Dima Belitsky</a>.
+            <a href="https://github.com/dab/daslides" target="_blank" rel="noopener">Open source</a>, MIT licensed.
+          </p>
+          <p id="app-version"></p>
+        </footer>
       </div>
     </section>
 
