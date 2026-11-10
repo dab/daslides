@@ -54,7 +54,8 @@ JPEG your camera already embedded, so there's no decoding to wait for.
 
 HEIC works in Safari only — no other browser can decode it.
 
-Subfolders are included. Thousands of photos are fine.
+Subfolders are included. Thousands of photos are fine. A network folder, such
+as a share on your NAS, works too: each photo is read only when its turn comes.
 
 > **Shooting RAW for a big screen?** Embedded previews run about 1500–1600 px wide —
 > great on a laptop, a little soft on a 4K TV. For those, convert once up front:
