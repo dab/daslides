@@ -18,6 +18,11 @@ A `Pixi.Container` graph (`scenes/vintageScene.ts`). Currently only the Vintage 
 
 1. `init(host)` — creates `Application` with `preferWebGLVersion: 2`, builds the mesh, attaches the ticker.
 2. `setItems(files)` — replaces the items array, clears the cache, fresh-starts at index 0.
+   Until its first slide is on screen (`starting`, cleared in `reveal()`),
+   `beginTransition` is a no-op: `slideStart` still belongs to the previous set,
+   so `tick()` would advance at once and cancel the pending `startSlide`, leaving
+   the canvas hidden. `clear()` (the Home button) is `setItems([])` plus
+   un-revealing the canvas so the next set fades up from black.
 3. `setTransition(id)` — switches between mesh-visible and scene-visible. In scene mode the engine immediately seeds the scene with the current slide.
 4. Per-frame `tick()`:
    - **shader**: updates `uProgress`/`uDwell*`, promotes B→A when `uProgress` hits 1.

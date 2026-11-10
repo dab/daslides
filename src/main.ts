@@ -43,6 +43,9 @@ const ui = new UI({
     loadFiles(name, files);
   },
   onSample: () => loadFiles('Sample photos by Dima Belitsky', sampleEntries()),
+  // Through history when we pushed an entry, so the browser's Back and this
+  // button stay one and the same step.
+  onHome: () => (history.state?.slideshow ? history.back() : goHome()),
   onDropped: async (entries) => {
     try {
       const { name, files } = await entriesFromDrop(entries);
@@ -142,4 +145,16 @@ async function loadFiles(name: string, files: ImageEntry[]) {
   engine.setItems(files);
   ui.setActive(0);
   engine.setPlaying(true);
+  if (!history.state?.slideshow) history.pushState({ slideshow: true }, '');
 }
+
+function goHome() {
+  if (items.length === 0) return;
+  items = [];
+  engine.clear();
+  ui.showHome();
+}
+
+// A reload keeps history.state but not the folder, so drop the stale entry.
+if (history.state?.slideshow) history.replaceState(null, '');
+addEventListener('popstate', () => { if (!history.state?.slideshow) goHome(); });
