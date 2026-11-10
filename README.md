@@ -15,6 +15,8 @@ never leave it.
 Pick a folder (or drop one on the page), press **F**, walk away. No photos to
 hand? Watch the sample slideshow.
 
+https://github.com/user-attachments/assets/39a03ecf-738d-4986-80eb-bf78d584ff8a
+
 ## Three ways to watch
 
 **Ken Burns** — a slow pan and zoom across every photo, crossfading from one to
