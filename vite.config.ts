@@ -46,9 +46,10 @@ function serviceWorker(base: string): Plugin {
     apply: 'build',
     generateBundle(_options, bundle) {
       const built = Object.keys(bundle).map((f) => base + f);
-      // public/ is copied as-is, so read it from disk for the icon list.
+      // public/ is copied as-is, so read it from disk for the icon list. The
+      // og.* share card is for link previews only; the app never shows it.
       const assets = readdirSync('public')
-        .filter((f) => /\.(png|svg|webmanifest)$/.test(f))
+        .filter((f) => /\.(png|svg|webmanifest)$/.test(f) && !f.startsWith('og.'))
         .map((f) => base + f);
       // index.html is emitted by Vite's own HTML plugin and isn't in `bundle`
       // here, but the offline navigation fallback needs it, so add it by name.

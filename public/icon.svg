@@ -1,9 +1,13 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
-  <rect width="512" height="512" fill="#0a0a0b"/>
-  <g transform="translate(256,256) scale(6.4) translate(-24,-24)"
-     fill="none" stroke="#e8c07d" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
-    <circle cx="24" cy="24" r="21"/>
-    <path d="M24 3v21M44 33 24 24M33 44 24 24M4 33l20-9M15 4l9 20"/>
-    <circle cx="24" cy="24" r="5.5" fill="#e8c07d" stroke="none"/>
-  </g>
-</svg>
+<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 48 48"><defs>
+  <radialGradient id="mg" cx="50%" cy="42%" r="70%">
+    <stop offset="0" stop-color="#fff7e6"/><stop offset=".55" stop-color="#f6d79f"/><stop offset="1" stop-color="#e3ad62"/>
+  </radialGradient>
+  <linearGradient id="mf" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0" stop-color="#d6a965"/><stop offset="1" stop-color="#c39457"/>
+  </linearGradient>
+</defs>
+<g transform="translate(24 24) scale(1.1) rotate(-8) translate(-24 -24)">
+  <path d="M12.1 15.15H35.9A1.4 1.4 0 0 1 37.3 16.55V31.45A1.4 1.4 0 0 1 35.9 32.85H12.1A1.4 1.4 0 0 1 10.7 31.45V16.55A1.4 1.4 0 0 1 12.1 15.15Z" fill="url(#mg)"/>
+  <path d="M8.2 5H39.8A3.2 3.2 0 0 1 43 8.2V39.8A3.2 3.2 0 0 1 39.8 43H8.2A3.2 3.2 0 0 1 5 39.8V8.2A3.2 3.2 0 0 1 8.2 5Z M12.1 15.15H35.9A1.4 1.4 0 0 1 37.3 16.55V31.45A1.4 1.4 0 0 1 35.9 32.85H12.1A1.4 1.4 0 0 1 10.7 31.45V16.55A1.4 1.4 0 0 1 12.1 15.15Z" fill="url(#mf)" fill-rule="evenodd"/>
+  <path d="M12.1 15.15H35.9A1.4 1.4 0 0 1 37.3 16.55V31.45A1.4 1.4 0 0 1 35.9 32.85H12.1A1.4 1.4 0 0 1 10.7 31.45V16.55A1.4 1.4 0 0 1 12.1 15.15Z" fill="none" stroke="#7a5a30" stroke-opacity=".55" stroke-width=".7"/>
+</g></svg>

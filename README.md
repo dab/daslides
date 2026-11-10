@@ -1,13 +1,9 @@
 <p align="center">
-  <img src="public/og.png" alt="daslides" width="640">
+  <img src="public/og.png" alt="daslides: your photographs, presented properly. A full-screen slideshow for your photo folders. RAW included, nothing uploaded." width="720">
 </p>
 
-<h1 align="center">daslides</h1>
-
 <p align="center">
-  Your photo folders, as a proper slideshow. In the browser, on your machine, nothing uploaded.
-  <br><br>
-  <a href="https://daslides.app/"><b>→ Open daslides</b></a>
+  <a href="https://daslides.app/"><b>Open daslides.app</b></a>
 </p>
 
 ---
@@ -64,9 +60,17 @@ Subfolders are included. Thousands of photos are fine.
 
 ## Private by default
 
-There is no backend. No analytics, no telemetry, no accounts, no third-party
-requests — even the fonts are served with the app. Photos are read locally and
-decoded in your browser.
+There is no backend. Photos are read locally and decoded in your browser; they
+are never part of any request. No accounts, no cookies set by the app, no
+tracking scripts, no third-party requests: even the fonts are served with the
+app.
+
+You don't have to take that on trust. The page's security policy forbids it from
+contacting any server but daslides.app, and your browser enforces that. Open the
+dev tools' Network tab while your own slideshow plays: nothing is sent.
+
+The site is hosted on Cloudflare, which, like any web host, sees that a page was
+requested and counts visits. It never sees your photos.
 
 Install it to your home screen and it runs offline.
 
