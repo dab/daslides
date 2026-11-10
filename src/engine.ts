@@ -148,8 +148,8 @@ export class Engine {
   private uploadQueue: TextureSource[] = [];
   private uploadRaf = 0;
   private navToken = 0;
-  private dwellSec = 10;
-  private tDurSec = 1.5;
+  private dwellSec = 3;
+  private tDurSec = 2.5;
   /** Holds the display awake while playback runs. */
   private wakeLock: WakeLockHandle = createWakeLock();
 

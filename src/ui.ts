@@ -316,8 +316,8 @@ export class UI {
   private hasFolder = false;
   private playing = false;
   private total = 0;
-  private dwellSec = 10;
-  private tDurSec = 1.5;
+  private dwellSec = 3;
+  private tDurSec = 2.5;
   /** Slide-progress bar, driven imperatively so restarts never force layout. */
   private progressAnim: Animation | null = null;
   private isIOS = isIOS();
@@ -329,8 +329,8 @@ export class UI {
       this.setPanel(false); // jumping is a "go look at it" action — get out of the way
     });
 
-    this.dwellSec = this.commitNumber(this.dwellInp, DWELL_MIN, DWELL_MAX, 10);
-    this.tDurSec = this.commitNumber(this.tdurInp, TDUR_MIN, TDUR_MAX, 1.5);
+    this.dwellSec = this.commitNumber(this.dwellInp, DWELL_MIN, DWELL_MAX, 3);
+    this.tDurSec = this.commitNumber(this.tdurInp, TDUR_MIN, TDUR_MAX, 2.5);
 
     // On touch devices `webkitdirectory` (folder picking) doesn't work — CSS
     // hides the folder label, so promote the photo label to the primary action.
