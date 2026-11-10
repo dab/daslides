@@ -15,6 +15,10 @@ never leave it.
 Pick a folder (or drop one on the page), press **F**, walk away. No photos to
 hand? Watch the sample slideshow.
 
+<p align="center">
+  <img src="docs/demo.avif" alt="The sample slideshow playing: slow Ken Burns pans across a leaf, a folding camera and a river gorge, then the same photos as paper prints stacked on a table." width="720">
+</p>
+
 ## Three ways to watch
 
 **Ken Burns** — a slow pan and zoom across every photo, crossfading from one to
