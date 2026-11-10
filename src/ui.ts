@@ -5,6 +5,7 @@ export interface UIBindings {
   onFilesPicked: (list: FileList) => void;
   onDropped: (entries: FileSystemEntry[]) => void;
   onSample: () => void;
+  onHome: () => void;
   onPlayToggle: () => void;
   onPrev: () => void;
   onNext: () => void;
@@ -369,6 +370,7 @@ export class UI {
     if (__SAMPLE_SLIDES__.length) this.sampleBtn.addEventListener('click', () => b.onSample());
     else this.sampleBtn.remove();
 
+    $<HTMLButtonElement>('home-btn').addEventListener('click', () => b.onHome());
     this.playBtn.addEventListener('click', () => b.onPlayToggle());
     this.prevBtn.addEventListener('click', () => b.onPrev());
     this.nextBtn.addEventListener('click', () => b.onNext());
@@ -681,6 +683,23 @@ export class UI {
     this.body.classList.add('has-folder');
     this.setPanel(false); // reveal the photos once a folder is chosen
     this.wake();
+  }
+
+  /** Back to the welcome screen, with focus on its main action. */
+  showHome() {
+    if (this.helpOpen) this.setHelp(false);
+    this.setPanel(false);
+    this.hasFolder = false;
+    clearTimeout(this.idleTimer);
+    this.body.classList.remove('has-folder', 'idle');
+    this.progressAnim?.cancel();
+    this.progressAnim = null;
+    this.renderList([]);
+    const doc = document as any;
+    if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+    else if (doc.webkitFullscreenElement) doc.webkitExitFullscreen?.();
+    const primary = this.body.classList.contains('touch') ? this.photosInput : this.fallback;
+    primary.focus({ preventScroll: true });
   }
 
   setActive(index: number) {

@@ -140,6 +140,8 @@ export class Engine {
   private inTransition = false;
   /** Set while beginTransition is between its first await and settling. */
   private transitionPending = false;
+  /** A new set is loading and nothing of it is on screen yet: no advancing. */
+  private starting = false;
   /** Latch so the "nothing loads" message is reported once per folder. */
   private gaveUp = false;
   /** Latch for the one-time canvas fade-in. */
@@ -474,8 +476,23 @@ void main(){ fragColor = vec4(0.0); }`;
     this.cursor = 0;
     this.failed.clear();
     this.gaveUp = false;
+    this.starting = items.length > 0;
     this.preloadWindow();
     this.startSlide();
+  }
+
+  /**
+   * Drop the folder: stop, free every slide, and hide the canvas so the next
+   * folder fades up from black like the first one did.
+   */
+  clear() {
+    if (!this.app) return;
+    this.setPlaying(false);
+    ++this.navToken;   // a startSlide still awaiting its decode must not bind
+    this.setItems([]);
+    this.revealed = false;
+    this.app.canvas.classList.remove('is-ready');
+    this.renderOnce();
   }
 
   setPlaying(p: boolean) {
@@ -919,6 +936,7 @@ void main(){ fragColor = vec4(0.0); }`;
    * state — there is nothing to cross-fade *from* on the first frame.
    */
   private reveal() {
+    this.starting = false;
     if (this.revealed) return;
     this.revealed = true;
     this.app.canvas.classList.add('is-ready');
@@ -953,7 +971,7 @@ void main(){ fragColor = vec4(0.0); }`;
     // that is dozens of discarded navigations, each bumping navToken. Guarding
     // on `inTransition` too makes jump() during a crossfade a no-op, which
     // matches what advance() already does.
-    if (this.transitionPending || this.inTransition) return;
+    if (this.transitionPending || this.inTransition || this.starting) return;
     if (this.items.length === 0) return;
     this.transitionPending = true;
     try {
