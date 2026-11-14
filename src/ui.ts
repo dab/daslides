@@ -286,9 +286,12 @@ export class UI {
   private fallback = $<HTMLInputElement>('pick-fallback');
   private photosInput = $<HTMLInputElement>('pick-photos');
   private toastEl = $<HTMLDivElement>('toast');
+  private statusEl = $<HTMLDivElement>('status');
+  private statusText = $<HTMLSpanElement>('status-text');
   private installBtn = $<HTMLButtonElement>('install-btn');
   private deferredPrompt: any = null;
   private toastTimer = 0;
+  private statusTimer = 0;
   private folderName = $<HTMLSpanElement>('folder-name');
   private listCount = $<HTMLSpanElement>('list-count');
   private counter = $<HTMLSpanElement>('counter');
@@ -342,6 +345,7 @@ export class UI {
     // Pickers are native <label for> → file input; we only react to the result.
     const onChange = (input: HTMLInputElement) => () => {
       if (input.files && input.files.length) b.onFilesPicked(input.files);
+      else this.setStatus(null);
       // Clear both, so re-picking the same folder still fires `change` (a
       // natural thing to try when you want to restart) and neither input keeps
       // thousands of File handles alive.
@@ -357,6 +361,12 @@ export class UI {
     // document. Matching :focus-visible keeps the ring off mouse clicks.
     for (const input of [this.fallback, this.photosInput]) {
       const labels = [...document.querySelectorAll<HTMLElement>(`label[for="${input.id}"]`)];
+      // The browser lists a picked folder before it fires `change`, and the
+      // page hears nothing meanwhile — on a network share that can be a long
+      // silence. So the status goes up when the picker opens, and comes down
+      // on `cancel` (or, with files, once the first slide is on screen).
+      input.addEventListener('click', () => this.setStatus('Reading your photos…'));
+      input.addEventListener('cancel', () => this.setStatus(null));
       input.addEventListener('focus', () => {
         if (input.matches(':focus-visible')) {
           for (const l of labels) l.classList.add('focus-ring');
@@ -634,7 +644,32 @@ export class UI {
     );
   }
 
+  /**
+   * Persistent progress line for reading and opening a folder. `null` clears
+   * it. Unlike a toast it has no timeout: the caller knows when the wait is
+   * over (first slide shown, picker cancelled, or an outcome toast).
+   */
+  setStatus(msg: string | null) {
+    clearTimeout(this.statusTimer);
+    if (msg === null) {
+      this.statusEl.classList.remove('show');
+      this.statusTimer = window.setTimeout(() => { this.statusEl.hidden = true; }, 300);
+      return;
+    }
+    this.statusText.textContent = msg;
+    if (this.statusEl.hidden) {
+      this.statusEl.hidden = false;
+      requestAnimationFrame(() => this.statusEl.classList.add('show'));
+    } else {
+      this.statusEl.classList.add('show');
+    }
+    this.statusTimer = window.setTimeout(() => {
+      this.statusText.textContent = `${msg} Large folders on a network drive can take a while.`;
+    }, 6000);
+  }
+
   toast(msg: string) {
+    this.setStatus(null); // an outcome replaces progress
     this.toastEl.textContent = msg;
     this.toastEl.hidden = false;
     this.toastEl.classList.remove('show');
@@ -689,6 +724,7 @@ export class UI {
   showHome() {
     if (this.helpOpen) this.setHelp(false);
     this.setPanel(false);
+    this.setStatus(null);
     this.hasFolder = false;
     clearTimeout(this.idleTimer);
     this.body.classList.remove('has-folder', 'idle');

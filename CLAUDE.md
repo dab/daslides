@@ -203,6 +203,15 @@ before `main.ts` syncs the engine from the DOM — so nothing else needs to know
 
 `src/ui.ts` contains a small `VirtualList` — Map<index, row> of currently-rendered rows, absolute-positioned by `index × rowHeight`. Recycle on scroll, debounced via `requestAnimationFrame`. `setActive` is O(1). No external virtualization library.
 
+The status line (`#status`, `UI.setStatus()`) covers a gap the browser leaves:
+after a folder is picked, the browser lists it **before** firing `change`, and
+the page gets no event meanwhile — seconds to minutes on a network share. So
+the line goes up on the input's `click`, and comes down on its `cancel` event,
+on any `toast()` (an outcome replaces progress), on `showHome()`, and on the
+first `onSlideChange` (which fires only once a slide is decoded). Don't move
+the trigger to a window `focus`/`blur` heuristic; macOS sheet dialogs make
+those unreliable, and failing silently there is exactly today's bug.
+
 ## Fit / vertical photos
 
 **Fade with Zoom**: pure COVER (`sampleSlide`, one tap). Image always fills the

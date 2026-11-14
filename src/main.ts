@@ -47,8 +47,11 @@ const ui = new UI({
   // button stay one and the same step.
   onHome: () => (history.state?.slideshow ? history.back() : goHome()),
   onDropped: async (entries) => {
+    ui.setStatus('Reading your photos…');
     try {
-      const { name, files } = await entriesFromDrop(entries);
+      const { name, files } = await entriesFromDrop(entries, {
+        onProgress: (n) => ui.setStatus(`Reading your photos… ${n.toLocaleString()} so far`),
+      });
       loadFiles(name, files);
     } catch (err) {
       console.error('[slideshow] reading the dropped folder failed:', err);
@@ -81,7 +84,8 @@ const ui = new UI({
   onJump: (i) => engine.jump(i),
 });
 
-engine.onSlideChange = (i) => ui.setActive(i);
+// Fires only once the incoming slide is decoded, so it also ends the wait.
+engine.onSlideChange = (i) => { ui.setActive(i); ui.setStatus(null); };
 engine.onPlayingChange = (p) => ui.setPlaying(p);
 engine.onAllFailed = () =>
   ui.toast('None of those files could be opened. Try a folder of JPEGs.');
@@ -125,11 +129,12 @@ async function loadFiles(name: string, files: ImageEntry[]) {
     ui.toast('No images found in that selection.');
     return;
   }
+  ui.setStatus(files.length === 1 ? 'Opening 1 photo…' : `Opening ${files.length.toLocaleString()} photos…`);
   // Wait for the renderer BEFORE touching the UI. setFolderName fades out the
   // welcome card, which is where the startup error message lives — so doing
   // this the other way round hid the explanation and left a black screen.
   await ready;
-  if (initFailed) return;
+  if (initFailed) { ui.setStatus(null); return; }
   // "Shuffle on load" — Fisher–Yates the items so playback doesn't always start
   // at file #1.
   const shuffleOnLoad = (document.getElementById('shuffle-on-load') as HTMLInputElement)?.checked;
