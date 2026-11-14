@@ -107,7 +107,7 @@ export function droppedEntries(dt: DataTransfer): FileSystemEntry[] {
  */
 export async function entriesFromDrop(
   roots: FileSystemEntry[],
-  fallbackName = 'Dropped photos',
+  opts: { name?: string; onProgress?: (count: number) => void } = {},
 ): Promise<{ name: string; files: ImageEntry[] }> {
   const files: ImageEntry[] = [];
 
@@ -129,11 +129,12 @@ export async function entriesFromDrop(
       const batch = await new Promise<FileSystemEntry[]>((res, rej) => reader.readEntries(res, rej));
       if (batch.length === 0) break;
       await Promise.all(batch.map(walk));
+      opts.onProgress?.(files.length);
     }
   };
 
   await Promise.all(roots.map(walk));
   files.sort((a, b) => naturalSort(a.path, b.path));
-  const name = roots.length === 1 && roots[0].isDirectory ? roots[0].name : fallbackName;
+  const name = roots.length === 1 && roots[0].isDirectory ? roots[0].name : opts.name ?? 'Dropped photos';
   return { name, files };
 }

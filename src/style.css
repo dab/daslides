@@ -459,7 +459,8 @@ kbd {
 .toast {
   position: fixed; left: 50%; bottom: calc(96px + env(safe-area-inset-bottom, 0px)); z-index: 50;
   transform: translateX(-50%) translateY(8px);
-  max-width: min(420px, calc(100vw - 32px));
+  /* max-content, or `left: 50%` shrinks it to fit the right half of the viewport. */
+  width: max-content; max-width: min(420px, calc(100vw - 32px));
   padding: 11px 16px; border-radius: var(--r-md);
   background: var(--glass-strong);
   backdrop-filter: blur(24px) saturate(150%);
@@ -471,6 +472,16 @@ kbd {
   transition: opacity 0.28s var(--ease), transform 0.28s var(--ease);
 }
 .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+/* Status line: a toast that stays up while a folder is read and opened. */
+.status { display: inline-flex; align-items: center; gap: 10px; text-align: left; }
+.status[hidden] { display: none; }
+.status__spin {
+  width: 14px; height: 14px; flex: none; border-radius: 50%;
+  border: 2px solid var(--hairline); border-top-color: var(--accent);
+  animation: status-spin 0.9s linear infinite;
+}
+@keyframes status-spin { to { transform: rotate(360deg); } }
 
 /* Standalone (installed) app: it's already immersive — the fullscreen button
    and the install entry are meaningless, so hide them. */
@@ -492,6 +503,7 @@ body.idle { cursor: none; }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.001ms !important; transition-duration: 0.001ms !important; }
+  .status__spin { animation: none; }
 }
 
 /* The pickers are <label for> elements, which aren't focusable, and the inputs
